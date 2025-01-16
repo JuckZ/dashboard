@@ -131,7 +131,7 @@ export default function(t: Translation, { key = 'Value' }: ValidationOptions): {
 
   const cronSchedule: Validator = (val: string) => {
     try {
-      cronstrue.toString(val);
+      cronstrue.toString(val, { verbose: true });
     } catch (e) {
       return t('validation.invalidCron');
     }
@@ -144,6 +144,8 @@ export default function(t: Translation, { key = 'Value' }: ValidationOptions): {
   const trailingForwardSlash: Validator = (val: string) => hasTrailingForwardSlash(val) ? t('validation.setting.serverUrl.trailingForwardSlash') : undefined;
 
   const url: Validator = (val: string) => val && !isUrl(val) ? t('validation.setting.serverUrl.url') : undefined;
+
+  const alphanumeric: Validator = (val: string) => val && !/^[a-zA-Z0-9]+$/.test(val) ? t('validation.alphanumeric', { key }) : undefined;
 
   const interval: Validator = (val: string) => !/^\d+[hms]$/.test(val) ? t('validation.monitoring.route.interval', { key }) : undefined;
 
@@ -458,6 +460,7 @@ export default function(t: Translation, { key = 'Value' }: ValidationOptions): {
 
   return {
     absolutePath,
+    alphanumeric,
     backupTarget,
     betweenLengths,
     betweenValues,
@@ -496,6 +499,6 @@ export default function(t: Translation, { key = 'Value' }: ValidationOptions): {
     servicePort,
     subDomain,
     testRule,
-    wildcardHostname,
+    wildcardHostname
   };
 }
