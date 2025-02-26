@@ -7,22 +7,23 @@ import {
   FAVORITE_TYPES
 } from '@shell/store/prefs';
 import { getVersionInfo } from '@shell/utils/version';
-import { addObjects, replaceWith, clear, addObject } from '@shell/utils/array';
+import {
+  addObjects, replaceWith, clear, addObject, sameContents
+} from '@shell/utils/array';
 import { sortBy } from '@shell/utils/sort';
 import { ucFirst } from '@shell/utils/string';
 
-import {
-  HCI, CATALOG, UI, SCHEMA, COUNT
-} from '@shell/config/types';
+import { HCI, UI, SCHEMA } from '@shell/config/types';
 import { HARVESTER_NAME as HARVESTER } from '@shell/config/features';
 import { NAME as EXPLORER } from '@shell/config/product/explorer';
-import { BASIC, FAVORITE, USED } from '@shell/store/type-map';
+import { TYPE_MODES } from '@shell/store/type-map';
 import { NAME as NAVLINKS } from '@shell/config/product/navlinks';
 import Group from '@shell/components/nav/Group';
+import LocaleSelector from '@shell/components/LocaleSelector';
 
 export default {
   name:       'SideNav',
-  components: { Group },
+  components: { Group, LocaleSelector },
   data() {
     return {
       groups:        [],
@@ -31,6 +32,7 @@ export default {
   },
 
   created() {
+    // Ensure that changes to resource that change often don't resort to spamming redraw of the side nav
     this.queueUpdate = debounce(this.getGroups, 500);
 
     this.getGroups();
@@ -42,24 +44,25 @@ export default {
   },
 
   watch: {
-    counts(a, b) {
-      if ( a !== b ) {
+
+    /**
+     * Keep this simple, we're only interested in new / removed schemas
+     */
+    allSchemasIds(a, b) {
+      if ( !sameContents(a, b) ) {
         this.queueUpdate();
       }
     },
 
-    allSchemas(a, b) {
-      if ( a !== b ) {
+    allNavLinksIds(a, b) {
+      if ( !sameContents(a, b) ) {
         this.queueUpdate();
       }
     },
 
-    allNavLinks(a, b) {
-      if ( a !== b ) {
-        this.queueUpdate();
-      }
-    },
-
+    /**
+     * Note - There's no watch on prefs, so this only catches in session changes
+     */
     favoriteTypes(a, b) {
       if ( !isEqual(a, b) ) {
         this.queueUpdate();
@@ -72,24 +75,18 @@ export default {
       }
     },
 
-    productId(a, b) {
-      if ( !isEqual(a, b) ) {
-        // Immediately update because you'll see it come in later
-        this.getGroups();
-      }
-    },
+    // Queue namespaceMode and namespaces
+    // Changes to namespaceMode can also change namespaces, so keep this simple and execute both in a shortened queue
 
     namespaceMode(a, b) {
-      if ( !isEqual(a, b) ) {
-        // Immediately update because you'll see it come in later
-        this.getGroups();
+      if ( a !== b ) {
+        this.queueUpdate();
       }
     },
 
     namespaces(a, b) {
       if ( !isEqual(a, b) ) {
-        // Immediately update because you'll see it come in later
-        this.getGroups();
+        this.queueUpdate();
       }
     },
 
@@ -100,8 +97,8 @@ export default {
       }
     },
 
-    product(a, b) {
-      if ( !isEqual(a, b) ) {
+    rootProduct(a, b) {
+      if (a?.name !== b?.name) {
         // Immediately update because you'll see it come in later
         this.getGroups();
       }
@@ -115,20 +112,14 @@ export default {
 
   computed: {
     ...mapState(['managementReady', 'clusterReady']),
-    ...mapGetters(['productId', 'clusterId', 'currentProduct', 'isSingleProduct', 'namespaceMode', 'isExplorer', 'isVirtualCluster']),
-    ...mapGetters({ locale: 'i18n/selectedLocaleLabel', availableLocales: 'i18n/availableLocales' }),
+    ...mapGetters(['isStandaloneHarvester', 'productId', 'clusterId', 'currentProduct', 'rootProduct', 'isSingleProduct', 'namespaceMode', 'isExplorer', 'isVirtualCluster']),
+    ...mapGetters({ locale: 'i18n/selectedLocaleLabel', hasMultipleLocales: 'i18n/hasMultipleLocales' }),
     ...mapGetters('type-map', ['activeProducts']),
 
     favoriteTypes: mapPref(FAVORITE_TYPES),
 
-    showClusterTools() {
-      return this.isExplorer &&
-             this.$store.getters['cluster/canList'](CATALOG.CLUSTER_REPO) &&
-             this.$store.getters['cluster/canList'](CATALOG.APP);
-    },
-
     supportLink() {
-      const product = this.currentProduct;
+      const product = this.rootProduct;
 
       if (product?.supportRoute) {
         return { ...product.supportRoute, params: { ...product.supportRoute.params, cluster: this.clusterId } };
@@ -163,7 +154,7 @@ export default {
     },
 
     isVirtualProduct() {
-      return this.currentProduct.name === HARVESTER;
+      return this.rootProduct.name === HARVESTER;
     },
 
     allNavLinks() {
@@ -174,7 +165,7 @@ export default {
       return this.$store.getters['cluster/all'](UI.NAV_LINK);
     },
 
-    allSchemas() {
+    allSchemasIds() {
       const managementReady = this.managementReady;
       const product = this.currentProduct;
 
@@ -182,33 +173,19 @@ export default {
         return [];
       }
 
-      return this.$store.getters[`${ product.inStore }/all`](SCHEMA);
-    },
-
-    counts() {
-      const managementReady = this.managementReady;
-      const product = this.currentProduct;
-
-      if ( !managementReady || !product ) {
-        return {};
-      }
-
-      const inStore = product.inStore;
-
-      // So that there's something to watch for updates
-      if ( this.$store.getters[`${ inStore }/haveAll`](COUNT) ) {
-        const counts = this.$store.getters[`${ inStore }/all`](COUNT)[0].counts;
-
-        return counts;
-      }
-
-      return {};
+      // This does take some up-front time, however avoids an even more costly getGroups call
+      return this.$store.getters[`${ product.inStore }/all`](SCHEMA).map((s) => s.id).sort();
     },
 
     namespaces() {
       return this.$store.getters['activeNamespaceCache'];
     },
+
+    allNavLinksIds() {
+      return this.allNavLinks.map((a) => a.id);
+    },
   },
+
   methods: {
     /**
      * Fetch navigation by creating groups from product schemas
@@ -227,13 +204,6 @@ export default {
       }
 
       const currentProduct = this.$store.getters['productId'];
-      let namespaces = null;
-
-      if ( !this.$store.getters['isAllNamespaces'] ) {
-        const namespacesObject = this.$store.getters['namespaces']();
-
-        namespaces = Object.keys(namespacesObject);
-      }
 
       // Always show cluster-level types, regardless of the namespace filter
       const namespaceMode = 'both';
@@ -255,7 +225,8 @@ export default {
       // This should already have come into the list from above, but in case it hasn't...
       addObject(loadProducts, currentProduct);
 
-      this.getProductsGroups(out, loadProducts, namespaceMode, namespaces, productMap);
+      this.getProductsGroups(out, loadProducts, namespaceMode, productMap);
+
       this.getExplorerGroups(out);
 
       replaceWith(this.groups, ...sortBy(out, ['weight:desc', 'label']));
@@ -263,12 +234,12 @@ export default {
       this.gettingGroups = false;
     },
 
-    getProductsGroups(out, loadProducts, namespaceMode, namespaces, productMap) {
+    getProductsGroups(out, loadProducts, namespaceMode, productMap) {
       const clusterId = this.$store.getters['clusterId'];
       const currentType = this.$route.params.resource || '';
 
       for ( const productId of loadProducts ) {
-        const modes = [BASIC];
+        const modes = [TYPE_MODES.BASIC];
 
         if ( productId === NAVLINKS ) {
           // Navlinks produce their own top-level nav items so don't need to show it as a product.
@@ -276,14 +247,16 @@ export default {
         }
 
         if ( productId === EXPLORER ) {
-          modes.push(FAVORITE);
-          modes.push(USED);
+          modes.push(TYPE_MODES.FAVORITE);
+          modes.push(TYPE_MODES.USED);
         }
 
-        for ( const mode of modes ) {
-          const types = this.$store.getters['type-map/allTypes'](productId, mode) || {};
+        // Get all types for all modes
+        const typesByMode = this.$store.getters['type-map/allTypes'](productId, modes);
 
-          const more = this.$store.getters['type-map/getTree'](productId, mode, types, clusterId, namespaceMode, namespaces, currentType);
+        for ( const mode of modes ) {
+          const types = typesByMode[mode] || {};
+          const more = this.$store.getters['type-map/getTree'](productId, mode, types, clusterId, namespaceMode, currentType);
 
           if ( productId === EXPLORER || !this.isExplorer ) {
             addObjects(out, more);
@@ -386,10 +359,6 @@ export default {
       });
     },
 
-    switchLocale(locale) {
-      this.$store.dispatch('i18n/switchTo', locale);
-    },
-
     syncNav() {
       const refs = this.$refs.groups;
 
@@ -428,10 +397,12 @@ export default {
   <nav class="side-nav">
     <!-- Actual nav -->
     <div class="nav">
-      <template v-for="(g) in groups">
+      <template
+        v-for="(g) in groups"
+        :key="g.name"
+      >
         <Group
           ref="groups"
-          :key="g.name"
           id-prefix=""
           class="package"
           :group="g"
@@ -442,33 +413,20 @@ export default {
         />
       </template>
     </div>
-    <!-- Cluster tools -->
-    <n-link
-      v-if="showClusterTools"
-      tag="div"
-      class="tools"
-      :to="{name: 'c-cluster-explorer-tools', params: {cluster: clusterId}}"
-    >
-      <a
-        class="tools-button"
-        @click="collapseAll()"
-      >
-        <i class="icon icon-gear" />
-        <span>{{ t('nav.clusterTools') }}</span>
-      </a>
-    </n-link>
     <!-- SideNav footer area (seems to be tied to harvester) -->
     <div
       v-if="showProductFooter"
       class="footer"
     >
       <!-- support link -->
-      <nuxt-link
+      <router-link
         :to="supportLink"
         class="pull-right"
+        role="link"
+        :aria-label="t('nav.support', {hasSupport: true})"
       >
         {{ t('nav.support', {hasSupport: true}) }}
-      </nuxt-link>
+      </router-link>
       <!-- version number -->
       <span
         v-clean-tooltip="{content: displayVersion, placement: 'top'}"
@@ -478,53 +436,29 @@ export default {
       </span>
 
       <!-- locale selector -->
-      <span v-if="isSingleProduct">
-        <v-popover
-          popover-class="localeSelector"
-          placement="top"
-          trigger="click"
-        >
-          <a
-            data-testid="locale-selector"
-            class="locale-chooser"
-          >
-            {{ locale }}
-          </a>
-
-          <template slot="popover">
-            <ul
-              class="list-unstyled dropdown"
-              style="margin: -1px;"
-            >
-              <li
-                v-for="(label, name) in availableLocales"
-                :key="name"
-                class="hand"
-                @click="switchLocale(name)"
-              >
-                {{ label }}
-              </li>
-            </ul>
-          </template>
-        </v-popover>
-      </span>
+      <LocaleSelector
+        v-if="isSingleProduct && hasMultipleLocales && !isStandaloneHarvester"
+        mode="login"
+        :show-icon="false"
+      />
     </div>
     <!-- SideNav footer alternative -->
     <div
       v-else
       class="version text-muted flex"
     >
-      <nuxt-link
+      <router-link
         v-if="singleProductAbout"
         :to="singleProductAbout"
+        role="link"
+        :aria-label="t('nav.ariaLabel.productAboutPage')"
       >
         {{ displayVersion }}
-      </nuxt-link>
+      </router-link>
       <template v-else>
-        <span>{{ displayVersion }}</span>
         <span
           v-if="isVirtualCluster && isExplorer"
-          v-tooltip="{content: harvesterVersion, placement: 'top'}"
+          v-clean-tooltip="{content: harvesterVersion, placement: 'top'}"
           class="clip text-muted ml-5"
         >
           (Harvester-{{ harvesterVersion }})
@@ -549,7 +483,7 @@ export default {
     overflow-y: auto;
 
     // h6 is used in Group element
-    ::v-deep h6 {
+    :deep() h6 {
       margin: 0;
       letter-spacing: normal;
       line-height: 15px;
@@ -583,7 +517,7 @@ export default {
         }
       }
 
-      &.nuxt-link-active:not(:hover) {
+      &.router-link-active:not(:hover) {
         A {
           background-color: var(--nav-active);
         }

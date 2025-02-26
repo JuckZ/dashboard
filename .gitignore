@@ -66,11 +66,7 @@ typings/
 # next.js build output
 .next
 
-# nuxt.js build output
-.nuxt
-.nuxt-prod
-
-# Nuxt generate
+# Build output
 dist
 
 # vuepress build output
@@ -94,6 +90,8 @@ sw.*
 # Cypress e2e testing
 cypress/videos
 cypress/screenshots
+cypress/accessibility
+setupTestEnv.sh
 
 # Storybook
 storybook-static/
@@ -116,4 +114,6 @@ scripts/standalone/node
 
 # yarn.lock files
 docusaurus/yarn.lock
-storybook/yarn.lock
+
+# GitHub actions scripts output
+codecov

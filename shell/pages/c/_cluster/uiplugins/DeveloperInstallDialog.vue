@@ -1,29 +1,35 @@
 <script>
 import AsyncButton from '@shell/components/AsyncButton';
+import AppModal from '@shell/components/AppModal.vue';
 import { LabeledInput } from '@components/Form/LabeledInput';
 import Checkbox from '@components/Form/Checkbox/Checkbox.vue';
 import { UI_PLUGIN } from '@shell/config/types';
-import { UI_PLUGIN_NAMESPACE } from '@shell/config/uiplugins';
+import { UI_PLUGIN_CHART_ANNOTATIONS, UI_PLUGIN_NAMESPACE } from '@shell/config/uiplugins';
 
 export default {
+  emits: ['closed'],
+
   components: {
     AsyncButton,
     Checkbox,
     LabeledInput,
+    AppModal,
   },
 
   data() {
     return {
-      name:              '',
-      location:          '',
-      persist:           false,
-      canModifyName:     true,
-      canModifyLocation: true,
+      name:                '',
+      location:            '',
+      persist:             false,
+      canModifyName:       true,
+      canModifyLocation:   true,
+      showModal:           false,
+      returnFocusSelector: '[data-testid="extensions-page-menu"]'
     };
   },
 
   watch: {
-    name(neu, old) {
+    name(neu) {
       if (this.canModifyLocation) {
         this.location = `/pkg/${ neu }/${ neu }.umd.min.js`;
       }
@@ -50,10 +56,10 @@ export default {
 
   methods: {
     showDialog() {
-      this.$modal.show('developerInstallPluginDialog');
+      this.showModal = true;
     },
     closeDialog(result) {
-      this.$modal.hide('developerInstallPluginDialog');
+      this.showModal = false;
       this.$emit('closed', result);
     },
 
@@ -102,9 +108,11 @@ export default {
               endpoint: url,
               noCache:  true,
               metadata: {
-                developer: 'true',
-                direct:    'true'
-              }
+                developer:                                        'true',
+                direct:                                           'true',
+                [UI_PLUGIN_CHART_ANNOTATIONS.EXTENSIONS_VERSION]: '>= 3',
+              },
+              noAuth: true
             }
           }
         });
@@ -142,10 +150,14 @@ export default {
 </script>
 
 <template>
-  <modal
+  <app-modal
+    v-if="showModal"
     name="developerInstallPluginDialog"
     height="auto"
     :scrollable="true"
+    :trigger-focus-trap="true"
+    :return-focus-selector="returnFocusSelector"
+    @close="closeDialog()"
   >
     <div class="plugin-install-dialog">
       <h4>
@@ -157,24 +169,24 @@ export default {
       <div class="custom mt-10">
         <div class="fields">
           <LabeledInput
-            v-model="location"
+            v-model:value="location"
             v-focus
             label-key="plugins.developer.fields.url"
-            @input="updateLocation"
+            @update:value="updateLocation"
           />
         </div>
       </div>
       <div class="custom mt-10">
         <div class="fields">
           <LabeledInput
-            v-model="name"
+            v-model:value="name"
             label-key="plugins.developer.fields.name"
-            @input="updateName"
+            @update:value="updateName"
           />
         </div>
         <div class="fields mt-10">
           <Checkbox
-            v-model="persist"
+            v-model:value="persist"
             label-key="plugins.developer.fields.persist"
           />
         </div>
@@ -194,7 +206,7 @@ export default {
         </div>
       </div>
     </div>
-  </modal>
+  </app-modal>
 </template>
 
 <style lang="scss" scoped>

@@ -51,16 +51,26 @@ export default class PagePo extends ComponentPo {
     return cy.url().should('include', `${ Cypress.config().baseUrl + (!!path ? path : this.path) }${ !!params ? `?${ params }` : '' }${ !!fragment ? `#${ fragment }` : '' }`);
   }
 
-  isCurrentPage(): Cypress.Chainable<boolean> {
-    return cy.url().then((url) => url === Cypress.config().baseUrl + this.path);
+  isCurrentPage(isExact = true): Cypress.Chainable<boolean> {
+    return cy.url().then((url) => {
+      if (isExact) {
+        return url === Cypress.config().baseUrl + this.path;
+      } else {
+        return url.indexOf(Cypress.config().baseUrl + this.path) === 0;
+      }
+    });
   }
 
-  checkIsCurrentPage() {
-    return this.isCurrentPage().should('eq', true);
+  checkIsCurrentPage(exact = true) {
+    return this.isCurrentPage(exact).should('eq', true);
   }
 
   mastheadTitle() {
     return this.self().find('.primaryheader h1').invoke('text');
+  }
+
+  waitForMastheadTitle(title: string) {
+    return this.mastheadTitle().should('contain', title);
   }
 
   navToMenuEntry(label: string) {
@@ -85,7 +95,15 @@ export default class PagePo extends ComponentPo {
     nav.navToSideMenuEntryByLabel(label);
   }
 
+  productNav(): ProductNavPo {
+    return new ProductNavPo();
+  }
+
   header() {
     return new HeaderPo();
+  }
+
+  extensionScriptImport(name: string) {
+    return this.self().get(`[data-purpose="extension"]`).get(`[id*="${ name }"]`);
   }
 }

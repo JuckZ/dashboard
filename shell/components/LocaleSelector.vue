@@ -12,6 +12,14 @@ export default {
       type:    String,
       default: ''
     },
+    showIcon: {
+      type:    Boolean,
+      default: true
+    }
+  },
+
+  data() {
+    return { isLocaleSelectorOpen: false };
   },
 
   computed: {
@@ -40,8 +48,15 @@ export default {
   },
 
   methods: {
+    openLocaleSelector() {
+      this.isLocaleSelectorOpen = true;
+    },
+    closeLocaleSelector() {
+      this.isLocaleSelectorOpen = false;
+    },
     switchLocale($event) {
       this.$store.dispatch('i18n/switchTo', $event);
+      this.closeLocaleSelector();
     },
   }
 };
@@ -50,20 +65,40 @@ export default {
 <template>
   <div>
     <div v-if="mode === 'login'">
-      <div v-if="showLocale">
-        <v-popover
-          popover-class="localeSelector"
+      <div
+        v-if="showLocale"
+        role="menu"
+        :aria-label="t('locale.menu')"
+        class="locale-login-container"
+        tabindex="0"
+        @click="openLocaleSelector"
+        @blur.capture="closeLocaleSelector"
+        @keyup.enter="openLocaleSelector"
+        @keyup.space="openLocaleSelector"
+      >
+        <v-dropdown
+          popperClass="localeSelector"
+          :shown="isLocaleSelectorOpen"
           placement="top"
-          trigger="click"
+          distance="8"
+          skidding="12"
+          :triggers="[]"
+          :autoHide="false"
+          :flip="false"
+          :container="false"
+          @focus.capture="openLocaleSelector"
         >
           <a
             data-testid="locale-selector"
             class="locale-chooser"
           >
             {{ selectedLocaleLabel }}
-            <i class="icon icon-fw icon-sort-down" />
+            <i
+              v-if="showIcon"
+              class="icon icon-fw icon-sort-down"
+            />
           </a>
-          <template slot="popover">
+          <template #popper>
             <ul
               class="list-unstyled dropdown"
               style="margin: -1px;"
@@ -72,26 +107,34 @@ export default {
                 v-if="showNone"
                 v-t="'locale.none'"
                 class="hand"
-                @click="switchLocale('none')"
+                tabindex="0"
+                role="menuitem"
+                @click.stop="switchLocale('none')"
+                @keyup.enter.stop="switchLocale('none')"
+                @keyup.space.stop="switchLocale('none')"
               />
               <li
                 v-for="(label, name) in availableLocales"
                 :key="name"
+                tabindex="0"
+                role="menuitem"
                 class="hand"
-                @click="switchLocale(name)"
+                @click.stop="switchLocale(name)"
+                @keyup.enter.stop="switchLocale(name)"
+                @keyup.space.stop="switchLocale(name)"
               >
                 {{ label }}
               </li>
             </ul>
           </template>
-        </v-popover>
+        </v-dropdown>
       </div>
     </div>
     <div v-else>
       <Select
         :value="selectedOption"
         :options="localesOptions"
-        @input="switchLocale($event)"
+        @update:value="switchLocale($event)"
       />
     </div>
   </div>
@@ -112,11 +155,21 @@ export default {
   border-radius: 4px;
 }
 
+.hand:focus-visible {
+  @include focus-outline;
+  outline-offset: 4px;
+}
+
 .locale-chooser {
   cursor: pointer;
 
   &:hover {
     text-decoration: none;
   }
+}
+
+.locale-login-container:focus-visible {
+  @include focus-outline;
+  outline-offset: 2px;
 }
 </style>

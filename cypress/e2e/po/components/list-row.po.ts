@@ -11,10 +11,10 @@ export default class ListRowPo extends ComponentPo {
    * the action button could be in a different column
    */
   actionBtn() {
-    return this.self().find('.btn.actions');
+    return this.self().find('[data-testid*="action-button"]');
   }
 
-  get(selector: string) {
-    return this.self().get(selector);
+  get(selector: string, options?: any) {
+    return this.self().get(selector, options);
   }
 }

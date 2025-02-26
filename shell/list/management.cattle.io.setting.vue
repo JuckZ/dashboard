@@ -5,9 +5,12 @@ import { ALLOWED_SETTINGS } from '@shell/config/settings';
 import { Banner } from '@components/Banner';
 import Loading from '@shell/components/Loading';
 import { VIEW_IN_API } from '@shell/store/prefs';
+import ActionMenu from '@shell/components/ActionMenuShell.vue';
 
 export default {
-  components: { Banner, Loading },
+  components: {
+    Banner, Loading, ActionMenu
+  },
 
   async fetch() {
     const viewInApi = this.$store.getters['prefs/get'](VIEW_IN_API);
@@ -62,18 +65,10 @@ export default {
     return { settings: null };
   },
 
-  computed: { ...mapGetters({ t: 'i18n/t' }) },
-
-  methods: {
-    showActionMenu(e, setting) {
-      const actionElement = e.srcElement;
-
-      this.$store.commit(`action-menu/show`, {
-        resources: setting.data,
-        elem:      actionElement
-      });
-    },
-  }
+  computed: {
+    ...mapGetters({ t: 'i18n/t' }),
+    ...mapGetters({ options: 'action-menu/optionsArray' }),
+  },
 };
 </script>
 
@@ -89,9 +84,10 @@ export default {
       </div>
     </Banner>
     <div
-      v-for="setting in settings"
+      v-for="(setting) in settings"
       :key="setting.id"
       class="advanced-setting mb-20"
+      :data-testid="`advanced-setting__option-${setting.id}`"
     >
       <div class="header">
         <div class="title">
@@ -100,7 +96,7 @@ export default {
             <span
               v-if="setting.fromEnv"
               class="modified"
-            >Set by Environment Variable</span>
+            >{{ t('advancedSettings.setEnv') }}</span>
             <span
               v-else-if="setting.customized"
               class="modified"
@@ -112,28 +108,27 @@ export default {
           v-if="setting.hasActions"
           class="action"
         >
-          <button
-            aria-haspopup="true"
-            aria-expanded="false"
-            type="button"
-            class="btn btn-sm role-multi-action actions"
-            @click="showActionMenu($event, setting)"
-          >
-            <i class="icon icon-actions" />
-          </button>
+          <action-menu
+            :resource="setting.data"
+            :button-aria-label="t('advancedSettings.edit.label')"
+            data-testid="action-button"
+            button-role="tertiary"
+          />
         </div>
       </div>
       <div value>
-        <div v-if="setting.hide">
+        <div v-if="setting.canHide">
           <button
             class="btn btn-sm role-primary"
+            role="button"
+            :aria-label="t('advancedSettings.hideShow')"
             @click="setting.hide = !setting.hide"
           >
-            {{ t('advancedSettings.show') }} {{ setting.id }}
+            {{ setting.hide ? t('advancedSettings.show') : t('advancedSettings.hide') }} {{ setting.id }}
           </button>
         </div>
         <div
-          v-else
+          v-show="!setting.canHide || (setting.canHide && !setting.hide)"
           class="settings-value"
         >
           <pre v-if="setting.kind === 'json'">{{ setting.json }}</pre>
@@ -144,14 +139,6 @@ export default {
             v-else
             class="text-muted"
           >&lt;{{ t('advancedSettings.none') }}&gt;</pre>
-        </div>
-        <div v-if="setting.canHide && !setting.hide">
-          <button
-            class="btn btn-sm role-primary"
-            @click="setting.hide = !setting.hide"
-          >
-            {{ t('advancedSettings.hide') }} {{ setting.id }}
-          </button>
         </div>
       </div>
     </div>

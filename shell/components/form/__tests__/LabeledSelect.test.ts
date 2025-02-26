@@ -1,5 +1,7 @@
 import { mount } from '@vue/test-utils';
+import { _VIEW, _EDIT, _CREATE } from '@shell/config/query-params';
 import LabeledSelect from '@shell/components/form/LabeledSelect.vue';
+import { defineComponent } from 'vue';
 
 describe('component: LabeledSelect', () => {
   describe('should display correct label', () => {
@@ -7,7 +9,7 @@ describe('component: LabeledSelect', () => {
       const label = 'Foo';
       const value = 'foo';
       const wrapper = mount(LabeledSelect, {
-        propsData: {
+        props: {
           value,
           options: [
             { label, value },
@@ -22,7 +24,7 @@ describe('component: LabeledSelect', () => {
     it('using value as label if no options', () => {
       const value = 'foo';
       const wrapper = mount(LabeledSelect, {
-        propsData: {
+        props: {
           value,
           options: [],
         }
@@ -37,7 +39,7 @@ describe('component: LabeledSelect', () => {
       const label = 'Foo';
       const customLabelKey = 'bananas';
       const wrapper = mount(LabeledSelect, {
-        propsData: {
+        props: {
           value,
           optionLabel: customLabelKey,
           options:     [{
@@ -55,12 +57,12 @@ describe('component: LabeledSelect', () => {
       const value = 'foo';
       const translation = 'bananas';
       const wrapper = mount(LabeledSelect, {
-        propsData: {
+        props: {
           localizedLabel: true,
           value,
           options:        [{ label: 'whatever', value }],
         },
-        mocks: { $store: { getters: { 'i18n/t': () => translation } } }
+        global: { mocks: { $store: { getters: { 'i18n/t': () => translation } } } }
       });
 
       // Component is from a library and class is not going to be changed
@@ -73,7 +75,7 @@ describe('component: LabeledSelect', () => {
         const oldLabel = 'Foo';
         const newLabel = 'Baz';
         const wrapper = mount(LabeledSelect, {
-          propsData: {
+          props: {
             value,
             options: [
               { label: oldLabel, value },
@@ -95,7 +97,7 @@ describe('component: LabeledSelect', () => {
         const value = 'foo';
         const newValue = 'bananas';
         const wrapper = mount(LabeledSelect, {
-          propsData: {
+          props: {
             value,
             options: [value],
           }
@@ -114,14 +116,14 @@ describe('component: LabeledSelect', () => {
         const translation = 'bananas';
         const i18nMap: Record<string, string> = { [newLabel]: translation };
         const wrapper = mount(LabeledSelect, {
-          propsData: {
+          props: {
             value,
             localizedLabel: true,
             options:        [
               { label: oldLabel, value },
             ],
           },
-          mocks: { $store: { getters: { 'i18n/t': (text: string) => i18nMap[text] } } }
+          global: { mocks: { $store: { getters: { 'i18n/t': (text: string) => i18nMap[text] } } } }
         });
 
         await wrapper.setProps({
@@ -133,24 +135,83 @@ describe('component: LabeledSelect', () => {
         // Component is from a library and class is not going to be changed
         expect(wrapper.find('.vs__selected').text()).toBe(translation);
       });
+    });
+  });
 
-      it.each([
-        [['a'], 'b', 0],
-        [[{ value: 'a', label: 'A' }], { value: 'a', label: 'B' }, 4]
-      ])('should only check for a new label if options are objects', async(options: any[], newOption, checkUpdateCalled: number) => {
-        const spyUpdatedOption = jest.spyOn(LabeledSelect.methods, 'getUpdatedOption');
-
-        const wrapper = mount(LabeledSelect, {
-          propsData: {
-            value: 'a',
-            options
-          }
-        });
-
-        await wrapper.setProps({ options: [newOption] });
-
-        expect(spyUpdatedOption).toHaveBeenCalledTimes(checkUpdateCalled);
+  describe(`given {'disabled', 'mode', 'loading'} options`, () => {
+    it.each([
+      ['open', false, _EDIT, false, true],
+      ['open', false, _CREATE, false, true],
+      ['not open', false, _VIEW, false, false],
+      ['not open', false, _EDIT, true, false],
+      ['not open', true, _EDIT, false, false],
+    ])('should %p dropdown element if options are { disabled: %p, mode: %p, loading: %p }', async(
+      _,
+      disabled,
+      mode,
+      loading,
+      isOpen
+    ) => {
+      const label = 'Foo';
+      const value = 'foo';
+      const wrapper = mount(LabeledSelect, {
+        props: {
+          value,
+          options: [
+            { label, value },
+          ],
+          disabled,
+          mode,
+          loading
+        }
       });
+
+      await wrapper.trigger('click');
+
+      const dropdownOpen = wrapper.find('.vs--open');
+
+      expect(dropdownOpen.exists()).toBe(isOpen);
+    });
+  });
+
+  describe('given attributes from parent element', () => {
+    it('should not pass classes to the select element', () => {
+      const customClass = 'bananas';
+      const ParentComponent = defineComponent({
+        components: { LabeledSelect },
+        template:   `<LabeledSelect class="${ customClass }" />`,
+      });
+      const wrapper = mount(ParentComponent);
+      const input = wrapper.find('.v-select');
+
+      expect(input.classes).not.toContain(customClass);
+    });
+
+    it.each([
+      [true, ['bananas']],
+      [false, 'bananas'],
+    ])('given multiple as %p, should emit %p', async(multiple, expectation) => {
+      const ParentComponent = defineComponent({
+        components: { LabeledSelect },
+        template:   `
+          <LabeledSelect
+            v-model:value="myValue"
+            :multiple="${ multiple }"
+            :options="options"
+            :appendToBody="false"
+          />`,
+        data: () => ({
+          myValue: [],
+          options: ['bananas']
+        })
+      });
+      const wrapper = mount(ParentComponent);
+
+      // https://test-utils.vuejs.org/guide/essentials/event-handling#Asserting-the-arguments-of-the-event
+      await wrapper.find('input').trigger('focus');
+      await wrapper.find('.vs__dropdown-option').trigger('click');
+
+      expect(wrapper.vm.$data.myValue).toStrictEqual(expectation);
     });
   });
 });

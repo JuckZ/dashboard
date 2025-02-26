@@ -1,16 +1,19 @@
 <script>
 import SimpleBox from '@shell/components/SimpleBox';
+import AppModal from '@shell/components/AppModal.vue';
 import Closeable from '@shell/mixins/closeable';
 import { MANAGEMENT } from '@shell/config/types';
 import { SETTING } from '@shell/config/settings';
 import { mapGetters } from 'vuex';
 import { isRancherPrime } from '@shell/config/version';
 import { fetchLinks } from '@shell/config/home-links';
+import { processLink } from '@shell/plugins/clean-html';
 
+// i18n-ignore footer.wechat.title, footer.wechat.modalText, footer.wechat.modalText2
 export default {
   name: 'CommunityLinks',
 
-  components: { SimpleBox },
+  components: { SimpleBox, AppModal },
 
   props: {
     linkOptions: {
@@ -32,7 +35,7 @@ export default {
   },
 
   data() {
-    return { links: {} };
+    return { links: {}, showWeChatModal: false };
   },
 
   computed: {
@@ -75,15 +78,19 @@ export default {
         all.push(...this.links.defaults.filter((link) => link.enabled));
       }
 
-      return all;
+      // Process the links
+      return all.map((item) => ({
+        ...item,
+        value: processLink(item.value)
+      }));
     }
   },
   methods: {
     show() {
-      this.$modal.show('wechat-modal');
+      this.showWeChatModal = true;
     },
     close() {
-      this.$modal.hide('wechat-modal');
+      this.showWeChatModal = false;
     }
   },
 };
@@ -101,21 +108,25 @@ export default {
         </h2>
       </template>
       <div
-        v-for="link in options"
-        :key="link.label"
+        v-for="(link, i) in options"
+        :key="i"
         class="support-link"
       >
-        <n-link
+        <router-link
           v-if="link.value.startsWith('/') "
           :to="link.value"
+          role="link"
+          :aria-label="link.label"
         >
           {{ link.label }}
-        </n-link>
+        </router-link>
         <a
           v-else
           :href="link.value"
           rel="noopener noreferrer nofollow"
           target="_blank"
+          role="link"
+          :aria-label="link.label"
         > {{ link.label }} </a>
       </div>
       <slot />
@@ -125,16 +136,22 @@ export default {
       >
         <a
           class="link"
+          tabindex="0"
+          :aria-label="t('footer.wechat.title')"
+          role="link"
           @click="show"
+          @keyup.enter="show"
         >
           {{ t('footer.wechat.title') }}
         </a>
       </div>
     </SimpleBox>
-    <modal
+    <app-modal
+      v-if="showWeChatModal"
       name="wechat-modal"
       height="auto"
       :width="640"
+      @close="close"
     >
       <div class="wechat-modal">
         <h1>{{ t('footer.wechat.modalText') }}</h1>
@@ -143,13 +160,18 @@ export default {
         <div>
           <button
             class="btn role-primary"
+            tabindex="0"
+            :aria-label="t('generic.close')"
+            role="button"
             @click="close"
+            @keyup.enter="close"
+            @keyup.space="close"
           >
             {{ t('generic.close') }}
           </button>
         </div>
       </div>
-    </modal>
+    </app-modal>
   </div>
 </template>
 

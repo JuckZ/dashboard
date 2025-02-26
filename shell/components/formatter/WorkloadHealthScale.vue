@@ -1,5 +1,4 @@
 <script>
-import Vue from 'vue';
 import ProgressBarMulti from '@shell/components/ProgressBarMulti';
 import PlusMinus from '@shell/components/form/PlusMinus';
 import { POD, SCALABLE_WORKLOAD_TYPES } from '@shell/config/types';
@@ -26,7 +25,7 @@ export default {
     },
   },
 
-  beforeDestroy() {
+  beforeUnmount() {
     document.removeEventListener('click', this.onClickOutside);
   },
 
@@ -95,7 +94,7 @@ export default {
       await this.scale(true);
     },
     async scale(isUp) {
-      Vue.set(this, 'disabled', true);
+      this['disabled'] = true;
       try {
         if (isUp) {
           await this.row.scaleUp();
@@ -109,7 +108,7 @@ export default {
         },
         { root: true });
       }
-      Vue.set(this, 'disabled', false);
+      this['disabled'] = false;
     },
 
     insideBounds(bounding, bounds) {
@@ -183,14 +182,22 @@ export default {
     <div
       id="trigger"
       class="hs-popover__trigger"
+      aria-role="button"
+      tabindex="0"
       :class="{expanded}"
+      :aria-roledescription="t('workload.scaleWorkloads')"
+      :aria-label="t('workload.healthScaleToggle')"
+      :aria-expanded="expanded"
       @click="expanded = !expanded"
+      @keyup.enter="expanded = !expanded"
+      @keydown.space.prevent="expanded = !expanded"
     >
       <ProgressBarMulti
         v-if="parts"
         class="health"
         :values="parts"
         :show-zeros="true"
+        :aria-describedby="t('workload.healthWorkloads')"
       />
       <i :class="{icon: true, 'icon-chevron-up': expanded, 'icon-chevron-down': !expanded}" />
     </div>
@@ -201,8 +208,8 @@ export default {
     >
       <div>
         <div
-          v-for="obj in parts"
-          :key="obj.label"
+          v-for="(obj, i) in parts"
+          :key="i"
           class="counts"
         >
           <span class="counts-label">{{ obj.label }}</span>

@@ -6,6 +6,8 @@ import {
 } from '@shell/utils/position';
 
 export default {
+  emits: ['draggable'],
+
   data() {
     return {
       dragOffset:     0,
@@ -20,10 +22,6 @@ export default {
 
     height: {
       get() {
-        if ( process.server ) {
-          return 0;
-        }
-
         if ( this.userHeight ) {
           return this.userHeight;
         }
@@ -52,10 +50,6 @@ export default {
 
     width: {
       get() {
-        if ( process.server ) {
-          return 0;
-        }
-
         if (this.userWidth) {
           return this.userWidth;
         }
@@ -317,6 +311,9 @@ export default {
       :class="{
         'resizer-left': userPin == 'left',
       }"
+      role="tablist"
+      @keyup.right.prevent="selectNext(1)"
+      @keyup.left.prevent="selectNext(-1)"
       @mousedown="emitDraggable(true)"
       @mouseup="emitDraggable(false)"
     >
@@ -326,24 +323,39 @@ export default {
         @mousedown.prevent.stop="dragXStart($event)"
         @touchstart.prevent.stop="dragXStart($event)"
       >
-        <i class="icon icon-code" />
+        <i
+          class="icon icon-code"
+          :alt="t('wm.containerShell.resizeShellWindow')"
+        />
       </div>
       <div
-        v-for="tab in tabs"
-        :key="tab.id"
+        v-for="(tab, i) in tabs"
+        :key="i"
         class="tab"
         :class="{'active': tab.id === active}"
+        role="tab"
+        :aria-selected="tab.id === active"
+        :aria-label="tab.label"
+        :aria-controls="`panel-${tab.id}`"
+        tabindex="0"
         @click="switchTo(tab.id)"
+        @keyup.enter.space="switchTo(tab.id)"
       >
         <i
           v-if="tab.icon"
           class="icon"
           :class="{['icon-'+ tab.icon]: true}"
+          :alt="t('wm.containerShell.tabIcon')"
         />
         <span class="tab-label"> {{ tab.label }}</span>
         <i
-          class="closer icon icon-fw icon-x"
+          data-testid="wm-tab-close-button"
+          class="closer icon icon-fw icon-x wm-closer-button"
+          :alt="t('wm.containerShell.closeShellTab', { tab: tab.label })"
+          tabindex="0"
+          :aria-label="t('windowmanager.closeTab', { tabId: tab.id })"
           @click.stop="close(tab.id)"
+          @keyup.enter.space.stop="close(tab.id)"
         />
       </div>
       <div
@@ -353,7 +365,10 @@ export default {
         @touchstart.prevent.stop="dragYStart($event)"
         @click="toggle"
       >
-        <i class="icon icon-sort" />
+        <i
+          class="icon icon-sort"
+          :alt="t('wm.containerShell.resizeShellWindow')"
+        />
       </div>
       <div
         v-if="userPin == 'left'"
@@ -361,15 +376,20 @@ export default {
         @mousedown.prevent.stop="dragXStart($event)"
         @touchstart.prevent.stop="dragXStart($event)"
       >
-        <i class="icon icon-code" />
+        <i
+          class="icon icon-code"
+          :alt="t('wm.containerShell.resizeShellWindow')"
+        />
       </div>
     </div>
     <div
-      v-for="tab in tabs"
-      :key="tab.id"
+      v-for="(tab, i) in tabs"
+      :id="`panel-${tab.id}`"
+      :key="i"
       class="body"
       :class="{'active': tab.id === active}"
       draggable="false"
+      role="tabpanel"
       @dragstart.prevent.stop
       @dragend.prevent.stop
       @mouseover="emitDraggable(false)"
@@ -436,13 +456,30 @@ export default {
           z-index: 1;
         }
 
+        &:focus-visible {
+          @include focus-outline;
+          outline-offset: -3px;
+        }
+
         .closer {
           margin-left: 5px;
           border: 1px solid var(--body-text);
           border-radius: var(--border-radius);
+          line-height: 12px;
+          font-size: 10px;
+          width: 14px;
+          align-self: center;
+          display: flex;
+          justify-content: center;
 
           &:hover {
-            background-color: var(--wm-closer-hover-bg);
+            border-color: var(--link-border);
+            color: var(--link-border);
+          }
+
+          &:focus-visible {
+            @include focus-outline;
+            outline-offset: 1px;
           }
         }
       }
@@ -502,4 +539,5 @@ export default {
       border-right: var(--nav-border-size) solid var(--nav-border);
     }
   }
+
 </style>

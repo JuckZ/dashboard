@@ -1,7 +1,7 @@
 import { GITHUB_NONCE, GITHUB_REDIRECT, GITHUB_SCOPE } from '@shell/config/query-params';
 import { NORMAN } from '@shell/config/types';
 import { _MULTI } from '@shell/plugins/dashboard-store/actions';
-import { addObjects, findBy } from '@shell/utils/array';
+import { addObjects, findBy, joinStringList } from '@shell/utils/array';
 import { openAuthPopup, returnTo } from '@shell/utils/auth';
 import { base64Encode } from '@shell/utils/crypto';
 import { removeEmberPage } from '@shell/utils/ember-page';
@@ -12,17 +12,18 @@ export const BASE_SCOPES = {
   github:       ['read:org'],
   googleoauth:  ['openid profile email'],
   azuread:      [],
-  keycloakoidc: ['openid profile email']
+  keycloakoidc: ['openid profile email'],
+  genericoidc:  ['openid profile email'],
 };
 
 const KEY = 'rc_nonce';
 
-const ERR_NONCE = 'nonce';
-
 export const LOGIN_ERRORS = {
   CLIENT:              'client',
   CLIENT_UNAUTHORIZED: 'client_unauthorized',
-  SERVER:              'server'
+  SERVER:              'server',
+  NONCE:               'nonce',
+  USER_UNAUTHORIZED:   'user_unauthorized',
 };
 
 export const state = function() {
@@ -37,7 +38,7 @@ export const state = function() {
 };
 
 export const getters = {
-  fromHeader() {
+  fromHeader(state) {
     return state.fromHeader;
   },
 
@@ -229,18 +230,22 @@ export const actions = {
     const encodedNonce = await dispatch('encodeNonce', baseNonce);
 
     const fromQuery = unescape(parseUrl(redirectUrl).query?.[GITHUB_SCOPE] || '');
-    const scopes = fromQuery.split(/[, ]+/).filter((x) => !!x);
+    let scopes = fromQuery.split(/[, ]+/).filter((x) => !!x);
 
     if (BASE_SCOPES[provider]) {
       addObjects(scopes, BASE_SCOPES[provider]);
     }
 
-    if ( opt.scopes ) {
-      addObjects(scopes, opt.scopes);
+    // Need to merge these 2 formats preventing duplicates between code and UI, e.g.
+    // [ 'openid profile email' ] from BASE_SCOPES
+    // 'openid profile email customScope' from the UI
+    if (opt.scopes) {
+      scopes = [joinStringList(scopes[0], opt.scopes)];
     }
 
     let url = removeParam(redirectUrl, GITHUB_SCOPE);
 
+    // TODO: #13457 - Verify use case of scopesJoinChar anywhere outside this repository
     const params = {
       [GITHUB_SCOPE]: scopes.join(opt.scopesJoinChar || ','), // Some providers won't accept comma separated scopes
       [GITHUB_NONCE]: encodedNonce
@@ -266,13 +271,13 @@ export const actions = {
     try {
       parsed = JSON.parse(expectJSON);
     } catch {
-      return ERR_NONCE;
+      return LOGIN_ERRORS.NONCE;
     }
 
     const expect = parsed.nonce;
 
     if ( !expect || expect !== nonce ) {
-      return ERR_NONCE;
+      return LOGIN_ERRORS.NONCE;
     }
 
     const body = { code };
@@ -309,6 +314,7 @@ export const actions = {
         const url = await dispatch('redirectTo', {
           provider,
           redirectUrl,
+          scopes:   body.scope,
           test:     true,
           redirect: false
         });
@@ -344,24 +350,60 @@ export const actions = {
     }
   },
 
-  async logout({ dispatch, commit }) {
-    // Unload plugins - we will load again on login
-    await this.$plugin.logout();
-
-    try {
-      await dispatch('rancher/request', {
-        url:                  '/v3/tokens?action=logout',
-        method:               'post',
-        data:                 {},
-        headers:              { 'Content-Type': 'application/json' },
-        redirectUnauthorized: false,
-      }, { root: true });
-    } catch (e) {
-    }
-
+  uiLogout({ commit, dispatch }) {
     removeEmberPage();
 
     commit('loggedOut');
     dispatch('onLogout', null, { root: true });
+  },
+
+  async logout({ dispatch, getters, rootState }, options = {}) {
+    // So, we only do this check if auth has been initialized.
+    //
+    // It's possible to be logged in and visit auth/logout directly instead
+    // of navigating from the app while being logged in. Unfortunately auth/logout
+    // doesn't use the authenticated middleware which means auth will never be
+    // initialized and this check will be invalid. This interferes with how we sometimes
+    // logout in our e2e tests.
+    //
+    // I'm going to leave this as is because we will be modifying and removing authenticated
+    // middleware soon and we should remove `force` at that time.
+    //
+    // TODO: remove `force` once authenticated middleware is removed/made sane.
+    if (!options?.force && !getters['loggedIn']) {
+      return;
+    }
+
+    // Unload plugins - we will load again on login
+    await rootState.$plugin.logout();
+
+    let logoutAction = 'logout';
+    const data = {};
+
+    // SLO - Single-sign logout - will logout auth provider from all places where it's logged in
+    if (options.slo) {
+      logoutAction = 'logoutAll';
+      data.finalRedirectUrl = returnTo({ isSlo: true }, this);
+    }
+
+    try {
+      const res = await dispatch('rancher/request', {
+        url:                  `/v3/tokens?action=${ logoutAction }`,
+        method:               'post',
+        data,
+        headers:              { 'Content-Type': 'application/json' },
+        redirectUnauthorized: false,
+      }, { root: true });
+
+      // Single-sign logout for SAML providers that allow for it
+      if (res.baseType === 'samlConfigLogoutOutput' && res.idpRedirectUrl) {
+        window.location.href = res.idpRedirectUrl;
+
+        return;
+      }
+    } catch (e) {
+    }
+
+    dispatch('uiLogout');
   }
 };

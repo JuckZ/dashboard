@@ -1,5 +1,5 @@
 import xor from 'lodash/xor';
-import { get } from '@shell/utils/object';
+import { get, isEqual } from '@shell/utils/object';
 
 export function removeObject<T>(ary: T[], obj: T): T[] {
   const idx = ary.indexOf(obj);
@@ -180,6 +180,45 @@ export function sameContents<T>(aryA: T[], aryB: T[]): boolean {
   return xor(aryA, aryB).length === 0;
 }
 
+export function sameArrayObjects<T>(aryA: T[], aryB: T[], positionAgnostic = false): boolean {
+  if (!aryA && !aryB) {
+    // catch calls from js (where props aren't type checked)
+    return false;
+  }
+  if (aryA?.length !== aryB?.length) {
+    // catch one null and not t'other, and different lengths
+    return false;
+  }
+
+  if (positionAgnostic) {
+    const consumedB: { [pos: number]: boolean } = {};
+
+    aryB.forEach((_, index) => {
+      consumedB[index] = false;
+    });
+
+    for (let i = 0; i < aryA.length; i++) {
+      const a = aryA[i];
+
+      const validA = aryB.findIndex((arB, index) => isEqual(arB, a) && !consumedB[index] );
+
+      if (validA >= 0) {
+        consumedB[validA] = true;
+      } else {
+        return false;
+      }
+    }
+  } else {
+    for (let i = 0; i < aryA.length; i++) {
+      if (!isEqual(aryA[i], aryB[i])) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 export function uniq<T>(ary: T[]): T[] {
   const out: T[] = [];
 
@@ -202,3 +241,16 @@ export function getUniqueLabelKeys<T extends KubeResource>(aryResources: T[]): s
 
   return Object.keys(uniqueObj).sort();
 }
+
+/**
+ * Join list as string into a new string without duplicates
+ * @param {string} a 'a b c'
+ * @param {string} b 'b c d'
+ * @param {string} [separator=' ']
+ * @return {string} 'a b c d'
+ */
+export const joinStringList = (a: string, b: string, separator = ' '): string => {
+  const all = a.split(separator).concat(b.split(separator));
+
+  return [...new Set(all)].join(separator);
+};

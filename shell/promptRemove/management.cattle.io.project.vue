@@ -58,12 +58,6 @@ export default {
       return [];
     },
 
-    plusMore() {
-      const remaining = this.filteredNamespaces.length > 5 ? this.filteredNamespaces.length - 5 : 0;
-
-      return this.t('promptRemove.andOthers', { count: remaining });
-    },
-
     displayName() {
       return this.currentProject?.spec?.displayName;
     },
@@ -100,7 +94,7 @@ export default {
         <template v-if="!canSeeProjectlessNamespaces">
           <span class="delete-warning"> {{ t('promptRemove.willDeleteAssociatedNamespaces') }}</span> <br>
           <div
-            v-clean-html="resourceNames(names, plusMore, t)"
+            v-clean-html="resourceNames(names, t)"
             class="mt-10"
           />
         </template>
@@ -110,11 +104,11 @@ export default {
         class="mt-20 remove-project-dialog"
       >
         <Checkbox
-          v-model="deleteProjectNamespaces"
+          v-model:value="deleteProjectNamespaces"
           :label="t('promptRemove.deleteAssociatedNamespaces')"
         />
         <div class="mt-10 ml-20">
-          <span v-clean-html="resourceNames(names, plusMore, t)" />
+          <span v-clean-html="resourceNames(names, t)" />
         </div>
       </div>
     </div>

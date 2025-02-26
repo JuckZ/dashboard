@@ -1,5 +1,5 @@
 import { ProductFunction } from './plugin';
-import { RouteConfig, Location } from 'vue-router';
+import { RouteRecordRaw } from 'vue-router';
 
 // Cluster Provisioning types
 export * from './types-provisioning';
@@ -26,7 +26,7 @@ export type CoreStoreInit = (store: any, ctx: any) => void;
 export type RegisterStore = () => (store: any) => void
 export type UnregisterStore = (store: any) => void
 
-export type PluginRouteConfig = {parent?: string, route: RouteConfig}
+export type PluginRouteRecordRaw = { [key: string]: any }
 
 export type OnEnterLeavePackageConfig = {
   clusterId: string,
@@ -156,6 +156,16 @@ export type LocationConfig = {
   context?: { [key: string]: string},
 };
 
+/**
+ * Environment metadata that extensions can access
+ */
+export type ExtensionEnvironment = {
+  version: string;
+  commit: string;
+  isPrime: boolean;
+  docsVersion: string; /** e.g. 'v2.10' */
+};
+
 export interface ProductOptions {
   /**
    * The category this product belongs under. i.e. 'config'
@@ -235,7 +245,17 @@ export interface ProductOptions {
   /**
    * The route that the product will lead to if click on in navigation.
    */
-  to?: Location;
+  to?: PluginRouteRecordRaw;
+
+  /**
+   * Alternative to the icon property. Uses require
+   */
+  svg?: Function;
+
+  /**
+   * Product name
+   */
+  name?: string;
 
   /**
    * Leaving these here for completeness but I don't think these should be advertised as useable to plugin creators.
@@ -374,9 +394,24 @@ export interface ConfigureTypeOptions {
 
 export interface ConfigureVirtualTypeOptions extends ConfigureTypeOptions {
   /**
+   * Only load the product if the type is present
+   */
+  ifHave?: string;
+
+  /**
+   * Only load the product if the type is present
+   */
+  ifHaveType?: string | RegExp | Object;
+
+  /**
+   * The label that this type should display
+   */
+  label?: string;
+
+  /**
    * The translation key displayed anywhere this type is referenced
    */
-  labelKey: string;
+  labelKey?: string;
 
   /**
    * An identifier that should be unique across all types
@@ -384,9 +419,9 @@ export interface ConfigureVirtualTypeOptions extends ConfigureTypeOptions {
   name: string;
 
   /**
-   * The route that this type should correspond to {@link PluginRouteConfig} {@link RouteConfig}
+   * The route that this type should correspond to {@link PluginRouteRecordRaw} {@link RouteRecordRaw}
    */
-  route: PluginRouteConfig | RouteConfig | Object;
+  route: PluginRouteRecordRaw | RouteRecordRaw | Object;
 }
 
 export interface DSLReturnType {
@@ -454,6 +489,37 @@ export interface DSLReturnType {
 }
 
 /**
+ * Context for the constructor of a model extension
+ */
+export type ModelExtensionContext = {
+  /**
+   * Dispatch vuex actions
+   */
+  dispatch: any,
+  /**
+   * Get from vuex store
+   */
+  getters: any,
+  /**
+   * Used to make http requests
+   */
+  axios: any,
+  /**
+   * Definition of the extension
+   */
+  $plugin: any,
+  /**
+   * Function to retrieve a localised string
+   */
+  t: (key: string) => string,
+};
+
+/**
+ * Constructor signature for a model extension
+ */
+export type ModelExtensionConstructor = (context: ModelExtensionContext) => Object;
+
+/**
  * Interface for a Dashboard plugin
  */
 export interface IPlugin {
@@ -488,8 +554,8 @@ export interface IPlugin {
   /**
    * Add a route to the Vue Router
    */
-  addRoute(route: RouteConfig): void;
-  addRoute(parent: string, route: RouteConfig): void;
+  addRoute(route: RouteRecordRaw): void;
+  addRoute(parent: string, route: RouteRecordRaw): void;
 
   /**
    * Adds an action/button to the UI
@@ -525,7 +591,7 @@ export interface IPlugin {
   /**
    * Add routes to the Vue Router
    */
-  addRoutes(routes: PluginRouteConfig[] | RouteConfig[]): void;
+  addRoutes(routes: PluginRouteRecordRaw[] | RouteRecordRaw[]): void;
 
    /**
     * Add a hook to be called when the plugin is uninstalled
@@ -560,6 +626,15 @@ export interface IPlugin {
   ): void;
 
   /**
+   * Adds a model extension
+   * @experimental May change or be removed in the future
+   *
+   * @param type Model type
+   * @param clz  Class for the model extension (constructor)
+   */
+  addModelExtension(type: string, clz: ModelExtensionConstructor): void;
+
+  /**
    * Register 'something' that can be dynamically loaded - e.g. model, edit, create, list, i18n
    * @param {String} type type of thing to register, e.g. 'edit'
    * @param {String} name unique name of 'something'
@@ -573,6 +648,11 @@ export interface IPlugin {
    * @param productName The name of the new product. This name is displayed in the navigation.
    */
   DSL(store: any, productName: string): DSLReturnType;
+
+  /**
+   * Get information about the Extension Environment
+   */
+  get environment(): ExtensionEnvironment;
 }
 
 // Internal interface

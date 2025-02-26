@@ -1,6 +1,4 @@
 name: storybook
-env:
-    STORYBOOK_TOKEN: ${{ secrets.STORYBOOK_TOKEN }}
 on:
   push:
     branches:
@@ -12,11 +10,11 @@ jobs:
   storybook:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Use Node.js
-      uses: actions/setup-node@v1
+      uses: actions/setup-node@v4
       with:
-        node-version: '16.x'
+        node-version-file: '.nvmrc'
     - name: Install packages
       run: yarn install
     - name: Build Storybook
@@ -24,4 +22,6 @@ jobs:
         yarn build-storybook
     - name: Publish Storybook
       if: ${{ github.event_name == 'push' && github.repository_owner == 'rancher'}}
+      env:
+        STORYBOOK_TOKEN: ${{ secrets.STORYBOOK_TOKEN }}
       run: .github/workflows/scripts/publish-storybook

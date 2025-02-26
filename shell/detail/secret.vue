@@ -18,6 +18,8 @@ const registryAddresses = [
 ];
 
 export default {
+  emits: ['input'],
+
   components: {
     ResourceTabs,
     DetailText,
@@ -87,7 +89,7 @@ export default {
     }
 
     if (!this.value._type) {
-      this.$set(this.value, '_type', TYPES.OPAQUE);
+      this.value['_type'] = TYPES.OPAQUE;
     }
 
     return {
@@ -120,6 +122,10 @@ export default {
       return this.value._type === TYPES.SSH;
     },
 
+    showKnownHosts() {
+      return this.isSsh && this.value.supportsSshKnownHosts;
+    },
+
     isBasicAuth() {
       return this.value._type === TYPES.BASIC;
     },
@@ -140,6 +146,12 @@ export default {
       return rows;
     },
 
+    knownHosts() {
+      const { data = {} } = this.value;
+
+      return data.known_hosts ? base64Decode(data.known_hosts) : '';
+    },
+
     dataLabel() {
       switch (this.value._type) {
       case TYPES.TLS:
@@ -158,8 +170,9 @@ export default {
 
 <template>
   <ResourceTabs
-    v-model="value"
+    :value="value"
     :mode="mode"
+    @update:value="$emit('input', $event)"
   >
     <Tab
       name="data"
@@ -267,6 +280,21 @@ export default {
           <div
             v-t="'sortableTable.noRows'"
             class="m-20 text-center"
+          />
+        </div>
+      </div>
+    </Tab>
+    <Tab
+      v-if="showKnownHosts"
+      name="known_hosts"
+      label-key="secret.ssh.knownHosts"
+    >
+      <div class="row">
+        <div class="col span-12">
+          <DetailText
+            :value="knownHosts"
+            label-key="secret.ssh.knownHosts"
+            :conceal="false"
           />
         </div>
       </div>
