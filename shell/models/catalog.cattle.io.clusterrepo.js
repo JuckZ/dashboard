@@ -1,16 +1,20 @@
-import Vue from 'vue';
 import { parse } from '@shell/utils/url';
 import { CATALOG } from '@shell/config/labels-annotations';
 import { insertAt } from '@shell/utils/array';
 import { CATALOG as CATALOG_TYPE } from '@shell/config/types';
+import { colorForState, stateDisplay } from '@shell/plugins/dashboard-store/resource-class';
 
 import SteveModel from '@shell/plugins/steve/steve-class';
 
 export default class ClusterRepo extends SteveModel {
   applyDefaults() {
     if ( !this.spec ) {
-      Vue.set(this, 'spec', { url: '' });
+      this['spec'] = { url: '' };
     }
+  }
+
+  get _isClusterRepoDisabled() {
+    return this.spec?.enabled === false;
   }
 
   get _availableActions() {
@@ -18,13 +22,31 @@ export default class ClusterRepo extends SteveModel {
 
     insertAt(out, 0, { divider: true });
 
-    insertAt(out, 0, {
-      action:   'refresh',
-      label:    this.t('action.refresh'),
-      icon:     'icon icon-refresh',
-      enabled:  !!this.links.update,
-      bulkable: true,
-    });
+    if (this._isClusterRepoDisabled) {
+      insertAt(out, 1, {
+        action:   'enableClusterRepo',
+        label:    this.t('action.enable'),
+        icon:     'icon icon-play',
+        enabled:  true,
+        bulkable: true,
+      });
+    } else {
+      insertAt(out, 1, {
+        action:   'disableClusterRepo',
+        label:    this.t('action.disable'),
+        icon:     'icon icon-pause',
+        enabled:  true,
+        bulkable: true,
+      });
+
+      insertAt(out, 0, {
+        action:   'refresh',
+        label:    this.t('action.refresh'),
+        icon:     'icon icon-refresh',
+        enabled:  !!this.links.update,
+        bulkable: true,
+      });
+    }
 
     return out;
   }
@@ -40,8 +62,26 @@ export default class ClusterRepo extends SteveModel {
     this.$dispatch('catalog/load', { force: true, reset: true }, { root: true });
   }
 
+  async disableClusterRepo() {
+    this.spec.enabled = false;
+    await this.save();
+  }
+
+  async enableClusterRepo() {
+    this.spec.enabled = true;
+    await this.save();
+  }
+
   get isGit() {
     return !!this.spec?.gitRepo;
+  }
+
+  get isOciType() {
+    const hasExplicitOciUrl = this.spec.url?.split(':')[0] === 'oci';
+    // insecurePlainHttp is only valid for OCI URL's and allows insecure connections to registries without enforcing TLS checks
+    const hasInsecurePlainHttp = Object.prototype.hasOwnProperty.call(this.spec, ('insecurePlainHttp'));
+
+    return hasExplicitOciUrl || hasInsecurePlainHttp;
   }
 
   get isRancherSource() {
@@ -107,7 +147,7 @@ export default class ClusterRepo extends SteveModel {
     if ( this.spec.gitRepo ) {
       return 'git';
     } else if ( this.spec.url ) {
-      return 'http';
+      return this.isOciType ? 'oci' : 'http';
     } else {
       return '?';
     }
@@ -148,6 +188,22 @@ export default class ClusterRepo extends SteveModel {
       ...this.metadata.state,
       transitioning: this.metadata.generation > this.status?.observedGeneration ? false : this.metadata.state.transitioning
     } : undefined;
+  }
+
+  get stateDisplay() {
+    if (this._isClusterRepoDisabled) {
+      return this.t('generic.disabled');
+    } else {
+      return stateDisplay(this.state);
+    }
+  }
+
+  get stateBackground() {
+    if (this._isClusterRepoDisabled) {
+      return 'badge-disabled';
+    } else {
+      return colorForState(this.state, this.stateObj?.error, this.stateObj?.transitioning).replace('text-', 'bg-');
+    }
   }
 
   waitForOperation(operationId, timeout, interval = 2000) {

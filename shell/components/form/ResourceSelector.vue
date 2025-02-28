@@ -36,6 +36,7 @@ export default {
   },
 
   async fetch() {
+    // Used in conjunction with `matches/match/label selectors`. Requires https://github.com/rancher/dashboard/issues/10417 to fix
     const hash = await allHash({ allResources: this.$store.dispatch('cluster/findAll', { type: this.type }) });
 
     this.allResources = hash.allResources;
@@ -82,8 +83,8 @@ export default {
       set(selectorExpressions) {
         const { matchLabels, matchExpressions } = simplify(selectorExpressions);
 
-        this.$set(this.value, 'matchLabels', matchLabels);
-        this.$set(this.value, 'matchExpressions', matchExpressions);
+        this.value['matchLabels'] = matchLabels;
+        this.value['matchExpressions'] = matchExpressions;
       }
     },
   },
@@ -113,7 +114,7 @@ export default {
     <div class="row">
       <div class="col span-12">
         <MatchExpressions
-          v-model="selectorExpressions"
+          v-model:value="selectorExpressions"
           :mode="mode"
           :show-remove="false"
           :type="type"

@@ -1,6 +1,6 @@
 <script>
 import { allHash } from '@shell/utils/promise';
-import { SECRET, SERVICE, INGRESS_CLASS } from '@shell/config/types';
+import { INGRESS_CLASS } from '@shell/config/types';
 import NameNsDescription from '@shell/components/form/NameNsDescription';
 import CreateEditView from '@shell/mixins/create-edit-view';
 import FormValidation from '@shell/mixins/form-validation';
@@ -10,15 +10,18 @@ import Labels from '@shell/components/form/Labels';
 import Error from '@shell/components/form/Error';
 import Tabbed from '@shell/components/Tabbed';
 import { get, set } from '@shell/utils/object';
-import { SECRET_TYPES as TYPES } from '@shell/config/secret';
 import DefaultBackend from './DefaultBackend';
 import Certificates from './Certificates';
 import Rules from './Rules';
 import IngressClass from './IngressClass';
+import Loading from '@shell/components/Loading';
+import IngressDetailEditHelper from '@shell/utils/ingress';
 
 export default {
-  name:       'CRUIngress',
-  components: {
+  name:         'CRUIngress',
+  emits:        ['input'],
+  inheritAttrs: false,
+  components:   {
     IngressClass,
     Certificates,
     CruResource,
@@ -28,7 +31,8 @@ export default {
     Rules,
     Tab,
     Tabbed,
-    Error
+    Error,
+    Loading,
   },
   mixins: [CreateEditView, FormValidation],
   props:  {
@@ -43,23 +47,34 @@ export default {
       default: 'edit'
     }
   },
+
   async fetch() {
-    this.ingressClassSchema = this.$store.getters[`cluster/schemaFor`](INGRESS_CLASS);
-    const hash = await allHash({
-      secrets:        this.$store.dispatch('cluster/findAll', { type: SECRET }),
-      services:       this.$store.dispatch('cluster/findAll', { type: SERVICE }),
-      ingressClasses: this.ingressClassSchema ? this.$store.dispatch('cluster/findAll', { type: INGRESS_CLASS }) : Promise.resolve([]),
+    this.ingressHelper = new IngressDetailEditHelper({
+      $store:    this.$store,
+      namespace: this.value.metadata.namespace
     });
 
-    this.allServices = hash.services;
-    this.allSecrets = hash.secrets;
+    this.ingressClassSchema = this.$store.getters[`cluster/schemaFor`](INGRESS_CLASS);
+
+    const promises = {
+      secrets:               this.ingressHelper.fetchSecrets(),
+      services:              this.ingressHelper.fetchServices(),
+      ingressClasses:        this.ingressClassSchema ? this.$store.dispatch('cluster/findAll', { type: INGRESS_CLASS }) : Promise.resolve([]),
+      ingressResourceFields: this.schema.fetchResourceFields(),
+    };
+
+    const hash = await allHash(promises);
+
+    this.secrets = hash.secrets;
+    this.services = hash.services;
     this.allIngressClasses = hash.ingressClasses;
   },
   data() {
     return {
+      filterByApi:        null,
       ingressClassSchema: null,
-      allSecrets:         [],
-      allServices:        [],
+      secrets:            [],
+      services:           [],
       allIngressClasses:  [],
       fvFormRuleSets:     [
         {
@@ -89,6 +104,14 @@ export default {
       fvReportedValidationPaths: ['spec.rules.http.paths.backend.service.port.number', 'spec.rules.http.paths.path', 'spec.rules.http.paths.backend.service.name']
     };
   },
+
+  watch: {
+    async 'value.metadata.namespace'(neu) {
+      this.services = await this.ingressHelper.fetchServices({ namespace: neu });
+      this.secrets = await this.ingressHelper.fetchSecrets({ namespace: neu });
+    }
+  },
+
   computed: {
     fvExtraRules() {
       const backEndOrRules = (spec) => {
@@ -133,22 +156,13 @@ export default {
       return { name: [], port: [] };
     },
     serviceTargets() {
-      return this.filterByCurrentResourceNamespace(this.allServices)
-        .map((service) => ({
-          label: service.metadata.name,
-          value: service.metadata.name,
-          ports: service.spec.ports?.map((p) => p.port)
-        }));
+      return this.ingressHelper.findAndMapServiceTargets(this.services);
     },
     firstTabLabel() {
       return this.isView ? this.t('ingress.rulesAndCertificates.title') : this.t('ingress.rules.title');
     },
     certificates() {
-      return this.filterByCurrentResourceNamespace(this.allSecrets.filter((secret) => secret._type === TYPES.TLS)).map((secret) => {
-        const { id } = secret;
-
-        return id.slice(id.indexOf('/') + 1);
-      });
+      return this.ingressHelper.findAndMapCerts(this.secrets);
     },
     ingressClasses() {
       return this.allIngressClasses.map((ingressClass) => ({
@@ -157,25 +171,20 @@ export default {
       }));
     },
   },
+
   created() {
-    this.$set(this.value, 'spec', this.value.spec || {});
-    this.$set(this.value.spec, 'rules', this.value.spec.rules || [{}]);
-    this.$set(this.value.spec, 'backend', this.value.spec.backend || {});
+    this.value['spec'] = this.value.spec || {};
+    this.value.spec['rules'] = this.value.spec.rules || [{}];
+    this.value.spec['backend'] = this.value.spec.backend || {};
 
     if (!this.value.spec.tls || Object.keys(this.value.spec.tls[0] || {}).length === 0) {
-      this.$set(this.value.spec, 'tls', []);
+      this.value.spec['tls'] = [];
     }
 
     this.registerBeforeHook(this.willSave, 'willSave');
   },
+
   methods: {
-    filterByCurrentResourceNamespace(resources) {
-      // When configuring an Ingress, the options for Secrets and
-      // default backend Services are limited to the namespace of the Ingress.
-      return resources.filter((resource) => {
-        return resource.metadata.namespace === this.value.metadata.namespace;
-      });
-    },
     willSave() {
       const backend = get(this.value.spec, this.value.defaultBackendPath);
       const serviceName = get(backend, this.value.serviceNamePath);
@@ -191,7 +200,9 @@ export default {
 };
 </script>
 <template>
+  <Loading v-if="$fetchState.pending" />
   <CruResource
+    v-else
     :done-route="doneRoute"
     :mode="mode"
     :resource="value"
@@ -223,11 +234,12 @@ export default {
         :error="tabErrors.rules"
       >
         <Rules
-          v-model="value"
+          :value="value"
           :mode="mode"
           :service-targets="serviceTargets"
           :certificates="certificates"
           :rules="rulesPathRules"
+          @update:value="$emit('input', $event)"
         />
       </Tab>
       <Tab
@@ -237,10 +249,11 @@ export default {
         :error="tabErrors.defaultBackend"
       >
         <DefaultBackend
-          v-model="value"
+          :value="value"
           :service-targets="serviceTargets"
           :mode="mode"
           :rules="defaultBackendPathRules"
+          @update:value="$emit('input', $event)"
         />
       </Tab>
       <Tab
@@ -250,10 +263,11 @@ export default {
         :weight="2"
       >
         <Certificates
-          v-model="value"
+          :value="value"
           :mode="mode"
           :certificates="certificates"
           :rules="{host: fvGetAndReportPathRules('spec.tls.hosts')}"
+          @update:value="$emit('input', $event)"
         />
       </Tab>
       <Tab
@@ -262,9 +276,10 @@ export default {
         :weight="1"
       >
         <IngressClass
-          v-model="value"
+          :value="value"
           :mode="mode"
           :ingress-classes="ingressClasses"
+          @update:value="$emit('input', $event)"
         />
       </Tab>
       <Tab

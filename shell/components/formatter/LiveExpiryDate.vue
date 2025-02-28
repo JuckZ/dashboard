@@ -12,6 +12,10 @@ export default {
       type:    Object,
       default: () => {}
     },
+    missingKey: {
+      type:    String,
+      default: 'generic.never',
+    }
   },
 
   data() {
@@ -30,7 +34,7 @@ export default {
     }
   },
 
-  beforeDestroy() {
+  beforeUnmount() {
     clearTimeout(this.timer);
   },
 
@@ -77,7 +81,7 @@ export default {
   />
   <span
     v-else
-    v-t="'generic.never'"
+    v-t="missingKey"
     class="text-muted"
   />
 </template>

@@ -1,14 +1,15 @@
 <script lang="ts">
-import Vue, { PropType } from 'vue';
+import { PropType, defineComponent } from 'vue';
 import { _VIEW } from '@shell/config/query-params';
 import RadioButton from '@components/Form/Radio/RadioButton.vue';
 
 interface Option {
   value: unknown,
-  label: string
+  label: string,
+  description?: string,
 }
 
-export default Vue.extend({
+export default defineComponent({
   components: { RadioButton },
   props:      {
     /**
@@ -102,6 +103,12 @@ export default Vue.extend({
     }
   },
 
+  emits: ['update:value'],
+
+  data() {
+    return { currFocusedElem: undefined as undefined | EventTarget | null };
+  },
+
   computed: {
     /**
      * Creates a collection of Options from the provided props.
@@ -142,15 +149,39 @@ export default Vue.extend({
      */
     isDisabled(): boolean {
       return (this.disabled || this.isView);
+    },
+    radioGroupLabel(): string {
+      return this.labelKey ? this.t(this.labelKey) : this.label ? this.label : '';
     }
   },
 
+  beforeUnmount() {
+    const radioGroup = this.$refs?.radioGroup as HTMLInputElement;
+
+    radioGroup.removeEventListener('focusin', this.focusChanged);
+  },
+
+  mounted() {
+    const radioGroup = this.$refs?.radioGroup as HTMLInputElement;
+
+    radioGroup.addEventListener('focusin', this.focusChanged);
+  },
+
   methods: {
+    focusChanged(ev: Event) {
+      this.currFocusedElem = ev.target;
+    },
     /**
      * Keyboard left/right event listener to select next/previous option. Emits
      * the input event.
      */
     clickNext(direction: number): void {
+      // moving focus away from a custom group element and pressing arrow keys
+      // should not have any effect on the group - custom UI for radiogroup option(s)
+      if (this.currFocusedElem !== this.$refs?.radioGroup) {
+        return;
+      }
+
       const opts = this.normalizedOptions;
       const selected = opts.find((x) => x.value === this.value);
       let newIndex = (selected ? opts.indexOf(selected) : -1) + direction;
@@ -161,7 +192,7 @@ export default Vue.extend({
         newIndex = 0;
       }
 
-      this.$emit('input', opts[newIndex].value);
+      this.$emit('update:value', opts[newIndex].value);
     }
   }
 });
@@ -199,25 +230,28 @@ export default Vue.extend({
 
     <!-- Group -->
     <div
+      ref="radioGroup"
+      role="radiogroup"
+      :aria-label="radioGroupLabel"
       class="radio-group"
       :class="{'row':row}"
       tabindex="0"
-      @keyup.down.stop="clickNext(1)"
-      @keyup.up.stop="clickNext(-1)"
+      @keydown.down.prevent.stop="clickNext(1)"
+      @keydown.up.prevent.stop="clickNext(-1)"
+      @keydown.space.enter.stop.prevent
     >
       <div
         v-for="(option, i) in normalizedOptions"
-        :key="name+'-'+i"
+        :key="i"
       >
         <slot
-          :listeners="$listeners"
+          :v-bind="$attrs"
           :option="option"
           :is-disabled="isDisabled"
           :name="i"
         >
           <!-- Default input -->
           <RadioButton
-            :key="name+'-'+i"
             :name="name"
             :value="value"
             :label="option.label"
@@ -225,7 +259,8 @@ export default Vue.extend({
             :val="option.value"
             :disabled="isDisabled"
             :mode="mode"
-            v-on="$listeners"
+            :prevent-focus-on-radio-groups="true"
+            @update:value="$emit('update:value', $event)"
           />
         </slot>
       </div>
@@ -235,9 +270,13 @@ export default Vue.extend({
 
 <style lang='scss'>
 .radio-group {
-  &:focus {
-    border:none;
-    outline:none;
+  &:focus, &:focus-visible {
+    border: none;
+    outline: none;
+  }
+
+  &:focus-visible .radio-button-checked {
+    @include focus-outline;
   }
 
   h3 {

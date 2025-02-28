@@ -3,6 +3,7 @@ import ProgressBarMulti from '@shell/components/ProgressBarMulti';
 import { ucFirst } from '@shell/utils/string';
 import { colorForState, stateSort } from '@shell/plugins/dashboard-store/resource-class';
 import { sortBy } from '@shell/utils/sort';
+import { FLEET } from '@shell/config/types';
 
 export default {
   components: { ProgressBarMulti },
@@ -12,19 +13,30 @@ export default {
       type:     Object,
       required: true
     },
+
+    clusterId: {
+      type:     String,
+      required: false,
+      default:  null,
+    }
   },
 
   computed: {
     summary() {
+      if (this.clusterId) {
+        return this.row.statusResourceCountsForCluster(this.clusterId);
+      }
+
       return this.row.status?.resourceCounts || {};
     },
 
     show() {
-      return this.stateParts.length > 0 && this.row.targetClusters?.length;
+      return this.stateParts.length > 0 && (this.row.type === FLEET.CLUSTER || this.row.targetClusters?.length);
     },
 
     stateParts() {
-      const keys = Object.keys(this.summary).filter((x) => !x.startsWith('desired'));
+      const summary = this.summary;
+      const keys = Object.keys(summary).filter((x) => !x.startsWith('desired'));
 
       const out = keys.map((key) => {
         const textColor = colorForState(key);
@@ -33,7 +45,7 @@ export default {
           label: ucFirst(key),
           color: textColor.replace(/text-/, 'bg-'),
           textColor,
-          value: this.summary[key],
+          value: summary[key],
           sort:  stateSort(textColor, key),
         };
       }).filter((x) => x.value > 0);
@@ -46,12 +58,12 @@ export default {
 </script>
 
 <template>
-  <v-popover
+  <v-dropdown
     v-if="show"
     class="text-center hand"
     placement="top"
-    :open-group="row.id"
-    :trigger="show ? 'click' : 'manual'"
+    :show-group="row.id"
+    :triggers="show ? ['click'] : []"
     offset="1"
   >
     <ProgressBarMulti
@@ -61,19 +73,19 @@ export default {
     <span v-if="summary.desiredReady === summary.ready">{{ summary.ready }}</span>
     <span v-else>{{ summary.ready }} of {{ summary.desiredReady }}</span>
 
-    <template #popover>
+    <template #popper>
       <table
         v-if="show"
         class="fixed"
       >
         <tbody>
           <tr
-            v-for="obj in stateParts"
-            :key="obj.label"
+            v-for="(obj, i) in stateParts"
+            :key="i"
           >
             <td
               class="text-left pr-20"
-              :class="{[obj.textColor]: true}"
+              :class="{ [obj.textColor]: true }"
             >
               {{ obj.label }}
             </td>
@@ -84,7 +96,7 @@ export default {
         </tbody>
       </table>
     </template>
-  </v-popover>
+  </v-dropdown>
   <div
     v-else
     class="text-center text-muted"
@@ -94,17 +106,17 @@ export default {
 </template>
 
 <style lang="scss">
-  .col-scale {
-    position: relative;
+.col-scale {
+  position: relative;
 
-    .trigger {
-      width: 100%;
-    }
+  .trigger {
+    width: 100%;
   }
+}
 
-  .scale {
-    margin: 0;
-    padding: 0;
-    line-height: initial;
-  }
+.scale {
+  margin: 0;
+  padding: 0;
+  line-height: initial;
+}
 </style>

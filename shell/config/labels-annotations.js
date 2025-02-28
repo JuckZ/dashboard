@@ -11,9 +11,11 @@ export const CATTLE_PUBLIC_ENDPOINTS = 'field.cattle.io/publicEndpoints';
 export const TARGET_WORKLOADS = 'field.cattle.io/targetWorkloadIds';
 export const UI_MANAGED = 'management.cattle.io/ui-managed';
 export const CREATOR_ID = 'field.cattle.io/creatorId';
+export const CREATOR_PRINCIPAL_ID = 'field.cattle.io/creator-principal-name';
 export const RESOURCE_QUOTA = 'field.cattle.io/resourceQuota';
 export const AZURE_MIGRATED = 'auth.cattle.io/azuread-endpoint-migrated';
 export const WORKSPACE_ANNOTATION = 'objectset.rio.cattle.io/id';
+export const NODE_ARCHITECTURE = 'kubernetes.io/arch';
 
 export const KUBERNETES = {
   SERVICE_ACCOUNT_UID:  'kubernetes.io/service-account.uid',
@@ -89,11 +91,12 @@ export const CATALOG = {
   _CLUSTER_TPL:  'cluster-template',
   _CLUSTER_TOOL: 'cluster-tool',
 
-  COMPONENT:        'catalog.cattle.io/ui-component',
-  SOURCE_REPO_TYPE: 'catalog.cattle.io/ui-source-repo-type',
-  SOURCE_REPO_NAME: 'catalog.cattle.io/ui-source-repo',
-  COLOR:            'catalog.cattle.io/ui-color',
-  DISPLAY_NAME:     'catalog.cattle.io/display-name',
+  COMPONENT:         'catalog.cattle.io/ui-component',
+  SOURCE_REPO_TYPE:  'catalog.cattle.io/ui-source-repo-type',
+  SOURCE_REPO_NAME:  'catalog.cattle.io/ui-source-repo',
+  COLOR:             'catalog.cattle.io/ui-color',
+  DISPLAY_NAME:      'catalog.cattle.io/display-name',
+  CLUSTER_REPO_NAME: 'catalog.cattle.io/cluster-repo-name',
 
   SUPPORTED_OS: 'catalog.cattle.io/os',
   PERMITTED_OS: 'catalog.cattle.io/permits-os',
@@ -106,11 +109,17 @@ export const CATALOG = {
 };
 
 export const FLEET = {
+  REPO_NAME:            'fleet.cattle.io/repo-name',
   CLUSTER_DISPLAY_NAME: 'management.cattle.io/cluster-display-name',
   CLUSTER_NAME:         'management.cattle.io/cluster-name',
   BUNDLE_ID:            'fleet.cattle.io/bundle-id',
+  BUNDLE_NAME:          'fleet.cattle.io/bundle-name',
+  BUNDLE_NAMESPACE:     'fleet.cattle.io/bundle-namespace',
   MANAGED:              'fleet.cattle.io/managed',
-  CLUSTER:              'fleet.cattle.io/cluster'
+  CLUSTER_NAMESPACE:    'fleet.cattle.io/cluster-namespace',
+  CLUSTER:              'fleet.cattle.io/cluster',
+  CREATED_BY_USER_ID:   'fleet.cattle.io/created-by-user-id',
+  CREATED_BY_USER_NAME: 'fleet.cattle.io/created-by-display-name',
 };
 
 export const RBAC = { PRODUCT: 'management.cattle.io/ui-product' };
@@ -142,6 +151,7 @@ export const HCI = {
   NETWORK_ROUTE:       'network.harvesterhci.io/route',
   IMAGE_NAME:          'harvesterhci.io/image-name',
   NETWORK_TYPE:        'network.harvesterhci.io/type',
+  CLUSTER_NETWORK:     'network.harvesterhci.io/clusternetwork',
   PRIMARY_SERVICE:     'cloudprovider.harvesterhci.io/primary-service',
 };
 
@@ -152,7 +162,7 @@ export const CLUSTER_BADGE = {
   TEXT:      'ui.rancher/badge-text',
   // Badge color - as a hex color - e.g. #ff00ff
   COLOR:     'ui.rancher/badge-color',
-  // Custom icon text - max 2 characters
+  // Custom icon text - max 3 characters
   ICON_TEXT: 'ui.rancher/badge-icon-text',
 };
 
@@ -171,3 +181,5 @@ export const SYSTEM_LABELS = [
   'node.kubernetes.io',
   'egress.rke2.io'
 ];
+
+export const CLOUD_CREDENTIALS = { EXPIRATION: 'rancher.io/expiration-timestamp' };

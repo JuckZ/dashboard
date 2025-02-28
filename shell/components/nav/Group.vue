@@ -5,6 +5,8 @@ export default {
 
   components: { Type },
 
+  emits: ['expand', 'close'],
+
   props: {
     depth: {
       type:    Number,
@@ -73,7 +75,7 @@ export default {
         if (overviewRoute && grp.overview) {
           const route = this.$router.resolve(overviewRoute || {});
 
-          return this.$route.fullPath.split('#')[0] === route?.route?.fullPath;
+          return this.$route.fullPath.split('#')[0] === route?.fullPath;
         }
       }
 
@@ -165,7 +167,7 @@ export default {
           const withoutHash = this.$route.hash ? this.$route.fullPath.slice(0, this.$route.fullPath.indexOf(this.$route.hash)) : this.$route.fullPath;
           const withoutQuery = withoutHash.split('?')[0];
 
-          if (matchesNavLevel || this.$router.resolve(item.route).route.fullPath === withoutQuery) {
+          if (matchesNavLevel || this.$router.resolve(item.route).fullPath === withoutQuery) {
             return true;
           }
         }
@@ -209,26 +211,40 @@ export default {
       v-if="showHeader"
       class="header"
       :class="{'active': isOverview, 'noHover': !canCollapse}"
+      role="button"
+      tabindex="0"
+      :aria-label="group.labelDisplay || group.label || ''"
       @click="groupSelected()"
+      @keyup.enter="groupSelected()"
+      @keyup.space="groupSelected()"
     >
       <slot name="header">
-        <n-link
+        <router-link
           v-if="hasOverview"
           :to="group.children[0].route"
           :exact="group.children[0].exact"
+          :tabindex="-1"
         >
-          <h6 v-clean-html="group.labelDisplay || group.label" />
-        </n-link>
+          <h6>
+            <span v-clean-html="group.labelDisplay || group.label" />
+          </h6>
+        </router-link>
         <h6
           v-else
-          v-clean-html="group.labelDisplay || group.label"
-        />
+        >
+          <span v-clean-html="group.labelDisplay || group.label" />
+        </h6>
       </slot>
       <i
         v-if="!onlyHasOverview && canCollapse"
-        class="icon toggle"
+        class="icon toggle toggle-accordion"
         :class="{'icon-chevron-right': !isExpanded, 'icon-chevron-down': isExpanded}"
+        role="button"
+        tabindex="0"
+        :aria-label="t('nav.ariaLabel.collapseExpand')"
         @click="peek($event, true)"
+        @keyup.enter="peek($event, true)"
+        @keyup.space="peek($event, true)"
       />
     </div>
     <ul
@@ -236,7 +252,10 @@ export default {
       class="list-unstyled body"
       v-bind="$attrs"
     >
-      <template v-for="(child, idx) in group[childrenKey]">
+      <template
+        v-for="(child, idx) in group[childrenKey]"
+        :key="idx"
+      >
         <li
           v-if="child.divider"
           :key="idx"
@@ -283,6 +302,7 @@ export default {
     cursor: pointer;
     color: var(--body-text);
     height: 33px;
+    outline: none;
 
     H6 {
       color: var(--body-text);
@@ -293,7 +313,8 @@ export default {
 
     > A {
       display: block;
-      padding-left: 16px;
+      box-sizing:border-box;
+      height: 100%;
       &:hover{
         text-decoration: none;
       }
@@ -302,17 +323,30 @@ export default {
       }
       > H6 {
         text-transform: none;
+        padding: 8px 0 8px 16px;
       }
     }
   }
 
   .accordion {
     .header {
+      &:focus-visible {
+        h6 span {
+          @include focus-outline;
+          outline-offset: 2px;
+        }
+      }
+      .toggle-accordion:focus-visible {
+        @include focus-outline;
+        outline-offset: -6px;
+      }
+
       &.active {
         color: var(--primary-hover-text);
         background-color: var(--primary-hover-bg);
 
         h6 {
+          padding: 8px 0 8px 16px;
           font-weight: bold;
           color: var(--primary-hover-text);
         }
@@ -330,7 +364,6 @@ export default {
   .accordion {
     &.depth-0 {
       > .header {
-        padding: 8px 0;
 
         &.noHover {
           cursor: default;
@@ -338,7 +371,7 @@ export default {
 
         > H6 {
           text-transform: none;
-          padding-left: 16px;
+          padding: 8px 0 8px 16px;
         }
 
         > I {
@@ -390,8 +423,8 @@ export default {
     }
   }
 
-  .body ::v-deep > .child.nuxt-link-active,
-  .header ::v-deep > .child.nuxt-link-exact-active {
+  .body :deep() > .child.router-link-active,
+  .header :deep() > .child.router-link-exact-active {
     padding: 0;
 
     A, A I {
@@ -405,7 +438,7 @@ export default {
     }
   }
 
-  .body ::v-deep > .child {
+  .body :deep() > .child {
     A {
       border-left: solid 5px transparent;
       line-height: 16px;

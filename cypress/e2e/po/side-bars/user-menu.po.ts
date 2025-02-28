@@ -17,40 +17,29 @@ export default class UserMenuPo extends ComponentPo {
    *
    */
   private userMenuContainer() {
-    return this.self().get('.tooltip.popover.vue-popover-theme');
-  }
-
-  /**
-   * Our section within the transient userMenuContainer
-   */
-  userMenu(): Cypress.Chainable {
-    return this.self().getId(`user-menu-dropdown`);
+    return cy.get('body').find('[dropdown-menu-collection]');
   }
 
   /**
    * Open the user menu
-   *
-   * Multiple clicks because sometimes just one ... isn't enough
-   *
    */
   open(): Cypress.Chainable {
-    this.self().click();
-    this.self().click();
-    this.self().click();
-    this.self().click();
+    return cy.getId('nav_header_showUserMenu').should('be.visible').click();
   }
 
   /**
    * Check if menu is open
    */
   isOpen() {
+    // These should fail if `visibility: hidden` - https://docs.cypress.io/guides/core-concepts/interacting-with-elements#Visibility
     this.userMenuContainer().should('be.visible');
-    this.userMenu().should('be.visible');
   }
 
   ensureOpen() {
     // Check the user avatar icon is there
     this.checkVisible();
+
+    this.open();
 
     // Check the v-popper drop down is open, if not open it
     // This isn't a pattern we want to use often, but this area has caused us lots of issues
@@ -58,6 +47,7 @@ export default class UserMenuPo extends ComponentPo {
     return this.userMenuContainer().should('have.length.gte', 0)
       .then(($el) => {
         if ($el.length) {
+          // It's meant to be open.... but is it visible? (clicks away from popover will hide it before removing from dom)
           if ($el.attr('style')?.includes('visibility: hidden')) {
             cy.log('User Avatar open but hidden, giving it a nudge');
 
@@ -76,7 +66,7 @@ export default class UserMenuPo extends ComponentPo {
    * Check if menu is closed
    */
   isClosed() {
-    this.userMenu().should('not.exist');
+    this.userMenuContainer().should('not.exist');
   }
 
   /**
@@ -84,7 +74,16 @@ export default class UserMenuPo extends ComponentPo {
    * @returns
    */
   getMenuItems(): Cypress.Chainable {
-    return this.userMenu().find('li').should('be.visible').and('have.length', 4);
+    return this.userMenuContainer().find('[dropdown-menu-item]').should('be.visible').and('have.length', 3);
+  }
+
+  /**
+   * label: 'Preferences', 'Account & API Keys', or 'Log Out'
+   * @param label
+   * @returns
+   */
+  getMenuItem(label: 'Preferences' | 'Account & API Keys' | 'Log Out') {
+    return this.ensureOpen().then(() => this.getMenuItems().contains(label));
   }
 
   /**
@@ -93,8 +92,11 @@ export default class UserMenuPo extends ComponentPo {
    * @returns
    */
   clickMenuItem(label: 'Preferences' | 'Account & API Keys' | 'Log Out') {
-    this.ensureOpen().then(() => {
-      return this.getMenuItems().contains(label).click();
-    });
+    this.getMenuItem(label).click();
+
+    if (label === 'Log Out') {
+      // This ensures that if cy.login runs again it doesn't use the stale session
+      Cypress.session.clearAllSavedSessions();
+    }
   }
 }

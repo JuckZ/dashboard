@@ -1,14 +1,14 @@
 <script>
 import { allHash } from '@shell/utils/promise';
-import { SECRET, SERVICE } from '@shell/config/types';
 import CreateEditView from '@shell/mixins/create-edit-view';
 import Rules from '@shell/edit/networking.k8s.io.ingress/Rules';
 import ResourceTabs from '@shell/components/form/ResourceTabs';
 import Tab from '@shell/components/Tabbed/Tab';
-import { SECRET_TYPES as TYPES } from '@shell/config/secret';
+import IngressDetailEditHelper from '@shell/utils/ingress';
 
 export default {
   name:       'CRUIngress',
+  emits:      ['input'],
   components: {
     ResourceTabs,
     Rules,
@@ -16,51 +16,46 @@ export default {
   },
   mixins: [CreateEditView],
   async fetch() {
-    const hash = await allHash({
-      secrets:  this.$store.dispatch('cluster/findAll', { type: SECRET }),
-      services: this.$store.dispatch('cluster/findAll', { type: SERVICE }),
+    this.ingressHelper = new IngressDetailEditHelper({
+      $store:    this.$store,
+      namespace: this.value.metadata.namespace
     });
+    const promises = {
+      services:       this.ingressHelper.fetchServices(),
+      secrets:        this.ingressHelper.fetchSecrets(),
+      resourceFields: this.schema.fetchResourceFields(),
+    };
 
-    this.allServices = hash.services;
-    this.allSecrets = hash.secrets;
+    const hash = await allHash(promises);
+
+    this.services = hash.services;
+    this.secrets = hash.secrets;
   },
   data() {
-    return { allSecrets: [], allServices: [] };
+    return {
+      secrets:  [],
+      services: [],
+    };
   },
   computed: {
     serviceTargets() {
-      return this.filterByCurrentResourceNamespace(this.allServices)
-        .map((service) => ({
-          label: service.metadata.name,
-          value: service.metadata.name,
-          ports: service.spec.ports?.map((p) => p.port)
-        }));
+      return this.ingressHelper.findAndMapServiceTargets(this.services);
     },
     firstTabLabel() {
       return this.isView ? this.t('ingress.rulesAndCertificates.title') : this.t('ingress.rules.title');
     },
     certificates() {
-      return this.filterByCurrentResourceNamespace(this.allSecrets.filter((secret) => secret._type === TYPES.TLS)).map((secret) => {
-        const { id } = secret;
-
-        return id.slice(id.indexOf('/') + 1);
-      });
+      return this.ingressHelper.findAndMapCerts(this.secrets);
     },
   },
-  methods: {
-    filterByCurrentResourceNamespace(resources) {
-      return resources.filter((resource) => {
-        return resource.metadata.namespace === this.value.metadata.namespace;
-      });
-    }
-  }
 };
 </script>
 <template>
   <ResourceTabs
-    v-model="value"
+    :value="value"
     mode="view"
     class="mt-20"
+    @update:value="$emit('input', $event)"
   >
     <Tab
       :label="t('ingress.rules.title')"
@@ -68,10 +63,11 @@ export default {
       :weight="1"
     >
       <Rules
-        v-model="value"
+        :value="value"
         :mode="mode"
         :service-targets="serviceTargets"
         :certificates="certificates"
+        @update:value="$emit('input', $event)"
       />
     </Tab>
   </ResourceTabs>

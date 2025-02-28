@@ -21,6 +21,10 @@
 
   // dark main text
   $lightest: #ffffff;
+  $keyboard-focus: #00ddff;
+
+  // menu cluster description active+hover
+  $desc-light: #EEEFF4;
 
   $secondary: $lighter;
   $disabled: $light;
@@ -31,17 +35,22 @@
 
   $drag-over: #DCDEE7;
 
+  $slate: #4B4F6B;
+
+  --slate: #{$slate};
+
   --default                    : #{$dark};
   --default-text               : #{$light};
   --default-hover-bg           : #{darken($dark, 10%)};
   --default-hover-text         : #{saturate($lightest, 20%)};
   --default-active-bg          : #{darken($dark, 25%)};
   --default-active-text        : #{contrast-color(darken($dark, 25%))};
-  --default-border             : #($dark);
+  --default-border             : #{$dark};
   --default-banner-bg          : #{rgba($dark, 0.15)};
   --default-light-bg           : #{rgba($dark, 0.05)};
   --slider-light-bg            : #{rgba($darker, 1)};
   --slider-light-bg-right      : #{rgba($darker, 0)};
+  --primary-keyboard-focus     : #{$keyboard-focus};
 
   --muted                      : #{$disabled};
 
@@ -49,6 +58,8 @@
   --body-text                  : #{$lightest};
   --scrollbar-thumb            : #{$medium};
   --scrollbar-thumb-dropdown   : #{$medium};
+
+  --side-menu-desc             : #{$desc-light};
 
   --header-bg                  : #{$darker};
   --header-border              : #{$medium};
@@ -61,7 +72,7 @@
   --banner-text-color          : #{$lightest};
 
   --nav-bg                     : #{$darkest};
-  --nav-active                 : var(--primary-active-bg);
+  --nav-active                 : #333;
   --nav-border                 : #{$medium};
   --nav-hover                  : var(--primary);
   --nav-expander-hover         : var(--primary-banner-bg);
@@ -104,10 +115,11 @@
   --dropdown-active-text       : #{$lightest};
   --dropdown-active-bg         : #{$light};
   --dropdown-hover-text        : #{$lightest};
-  --dropdown-hover-bg          : var(--link);
+  --dropdown-hover-bg          : #{$slate};
   --dropdown-disabled-bg       : #{$disabled};
   --dropdown-disabled-text     : #{$disabled};
-  --dropdown-highlight-text     : var(--link);
+  --dropdown-group-text        : #{$disabled};
+  --dropdown-highlight-text    : var(--link);
 
   --input-text                 : #{$lightest};
   --input-label                : #{$lighter};
@@ -138,7 +150,7 @@
   --tag-primary                : #{$lightest};
   --tag-bg                     : #{$medium};
 
-  --popover-bg                 : var(--body-bg);
+  --popover-bg                 : #{$darker};
   --popover-border             : var(--border);
   --popover-text               : var(--body-text);
 
@@ -211,4 +223,12 @@
 
   --product-icon               : #{$lighter};
   --product-icon-active        : #{$lightest};
+
+  --badge-state-disabled-text  : #{$desc-light};
+  --badge-state-disabled-bg    : #{$medium};
+  --badge-state-disabled-border: #{$lighter};
+
+  $slate: #4B4F6B;
+
+  --slate: #{$slate};
 }

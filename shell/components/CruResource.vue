@@ -6,7 +6,7 @@ import { SCHEMA, NAMESPACE } from '@shell/config/types';
 import ResourceYaml from '@shell/components/ResourceYaml';
 import { Banner } from '@components/Banner';
 import AsyncButton from '@shell/components/AsyncButton';
-import { mapGetters } from 'vuex';
+import { mapGetters, mapState, mapActions } from 'vuex';
 import { stringify, exceptionToErrorsArray } from '@shell/utils/error';
 import CruResourceFooter from '@shell/components/CruResourceFooter';
 
@@ -22,6 +22,8 @@ export const CONTEXT_HOOK_EDIT_YAML = 'show-preview-yaml';
 export default {
 
   name: 'CruResource',
+
+  emits: ['select-type', 'error', 'cancel', 'finish'],
 
   components: {
     AsyncButton,
@@ -53,7 +55,7 @@ export default {
     },
 
     resource: {
-      type:     Object,
+      type:     [String, Object],
       required: true
     },
 
@@ -118,6 +120,11 @@ export default {
       default: () => []
     },
 
+    stepsOptions: {
+      type:    Object,
+      default: () => ({ editFirstStep: true })
+    },
+
     // The set of labels to display for the finish AsyncButton
     finishMode: {
       type:    String,
@@ -158,27 +165,31 @@ export default {
   },
 
   data(props) {
-    const yaml = this.createResourceYaml();
-
-    this.$on('createNamespace', (e) => {
-      // When createNamespace is set to true,
-      // the UI will attempt to create a new namespace
-      // before saving the resource.
-      this.createNamespace = e;
-    });
+    const inStore = this.$store.getters['currentStore'](this.resource);
+    const schema = this.$store.getters[`${ inStore }/schemaFor`](this.resource.type);
 
     return {
       isCancelModal:   false,
-      createNamespace: false,
       showAsForm:      this.$route.query[AS] !== _YAML,
-      resourceYaml:    yaml,
-      initialYaml:     yaml,
+      /**
+       * Initialised on demand (given that it needs to make a request to fetch schema definition)
+       */
+      resourceYaml:    null,
+      /**
+       * Initialised on demand (given that it needs to make a request to fetch schema definition)
+       */
+      initialYaml:     null,
+      /**
+       * Save a copy of the initial resource. This is used to calc the initial yaml later on
+       */
+      initialResource: clone(this.resource),
       abbrSizes:       {
         3: '24px',
         4: '18px',
         5: '16px',
         6: '14px'
       },
+      schema
     };
   },
 
@@ -200,15 +211,8 @@ export default {
       return this.validationPassed;
     },
 
-    canDiff() {
-      return this.initialYaml !== this.resourceYaml;
-    },
-
     canEditYaml() {
-      const inStore = this.$store.getters['currentStore'](this.resource);
-      const schema = this.$store.getters[`${ inStore }/schemaFor`](this.resource.type);
-
-      return !(schema?.resourceMethods?.includes('blocked-PUT'));
+      return !(this.schema?.resourceMethods?.includes('blocked-PUT'));
     },
 
     showYaml() {
@@ -244,6 +248,8 @@ export default {
     },
 
     ...mapGetters({ t: 'i18n/t' }),
+    ...mapState('cru-resource', ['createNamespace']),
+    ...mapActions('cru-resource', ['setCreateNamespace']),
 
     /**
      * Prevent issues for malformed types injection
@@ -270,6 +276,14 @@ export default {
     if ( this._selectedSubtype ) {
       this.$emit('select-type', this._selectedSubtype);
     }
+  },
+
+  mounted() {
+    this.$store.dispatch('cru-resource/setCreateNamespace', false);
+  },
+
+  beforeUnmount() {
+    this.$store.dispatch('cru-resource/setCreateNamespace', false);
   },
 
   methods: {
@@ -309,8 +323,9 @@ export default {
       }
     },
 
-    createResourceYaml(modifiers) {
-      const resource = this.resource;
+    async createResourceYaml(modifiers, resource = this.resource) {
+      // Required to populate yaml comments and default values
+      await this.schema?.fetchResourceFields();
 
       if ( typeof this.generateYaml === 'function' ) {
         return this.generateYaml.apply(this, resource);
@@ -326,6 +341,9 @@ export default {
     },
 
     async showPreviewYaml() {
+      // Required to populate yaml comments and default values
+      await this.schema?.fetchResourceFields();
+
       if ( this.applyHooks ) {
         try {
           await this.applyHooks(BEFORE_SAVE_HOOKS, CONTEXT_HOOK_EDIT_YAML);
@@ -336,7 +354,7 @@ export default {
         }
       }
 
-      const resourceYaml = this.createResourceYaml(this.yamlModifiers);
+      const resourceYaml = await this.createResourceYaml(this.yamlModifiers);
 
       this.resourceYaml = resourceYaml;
       this.showAsForm = false;
@@ -405,6 +423,21 @@ export default {
       if (this.preventEnterSubmit) {
         event.preventDefault();
       }
+    },
+
+    shouldProvideSlot(slot) {
+      return slot !== 'default' && typeof this.$slots[slot] === 'function';
+    }
+  },
+
+  watch: {
+    async showAsForm(neu) {
+      if (!neu) {
+        // Entering yaml mode
+        if (!this.initialYaml) {
+          this.initialYaml = await this.createResourceYaml(undefined, this.initialResource);
+        }
+      }
     }
   }
 };
@@ -419,8 +452,9 @@ export default {
     >
       {{ description }}
     </p>
-    <form
+    <component
       :is="(isView? 'div' : 'form')"
+      :value="resource"
       data-testid="cru-form"
       class="create-resource-container cru__form"
       @submit.prevent
@@ -435,6 +469,7 @@ export default {
           v-for="(err, i) in errors"
           :key="i"
           color="error"
+          :data-testid="`error-banner${i}`"
           :label="stringify(mappedErrors[err].message)"
           :icon="mappedErrors[err].icon"
           :closable="true"
@@ -450,11 +485,17 @@ export default {
           :subtypes="subtypes"
         >
           <div
-            v-for="subtype in subtypes"
-            :key="subtype.id"
+            v-for="(subtype, i) in subtypes"
+            :key="i"
             class="subtype-banner"
             :class="{ selected: subtype.id === _selectedSubtype }"
+            :data-testid="`subtype-banner-item-${subtype.id}`"
+            tabindex="0"
+            :aria-disabled="false"
+            :aria-label="subtype.description ? `${subtype.label} - ${subtype.description}` : subtype.label"
+            role="link"
             @click="selectType(subtype.id, $event)"
+            @keyup.enter.space="selectType(subtype.id, $event)"
           >
             <slot name="subtype-content">
               <div class="subtype-container">
@@ -531,6 +572,7 @@ export default {
             ref="Wizard"
             :header-mode="mode"
             :steps="steps"
+            :edit-first-step="stepsOptions.editFirstStep"
             :errors="errors"
             :finish-mode="finishMode"
             class="wizard"
@@ -540,7 +582,10 @@ export default {
               #stepContainer="{activeStep}"
               class="step-container"
             >
-              <template v-for="step in steps">
+              <template
+                v-for="(step, i) in steps"
+                :key="i"
+              >
                 <div
                   v-if="step.name === activeStep.name || step.hidden"
                   :key="step.name"
@@ -555,73 +600,74 @@ export default {
               </template>
             </template>
             <template #controlsContainer="{showPrevious, next, back, activeStep, canNext, activeStepIndex, visibleSteps}">
-              <template name="form-footer">
-                <CruResourceFooter
-                  class="cru__footer"
-                  :mode="mode"
-                  :is-form="showAsForm"
-                  :show-cancel="showCancel"
-                  @cancel-confirmed="confirmCancel"
+              <CruResourceFooter
+                class="cru__footer"
+                :mode="mode"
+                :is-form="showAsForm"
+                :show-cancel="showCancel"
+                @cancel-confirmed="confirmCancel"
+              >
+                <!-- Pass down templates provided by the caller -->
+                <template
+                  v-for="(_, slot) of $slots"
+                  #[slot]="scope"
+                  :key="slot"
                 >
-                  <!-- Pass down templates provided by the caller -->
-                  <template
-                    v-for="(_, slot) of $scopedSlots"
-                    v-slot:[slot]="scope"
-                  >
+                  <template v-if="shouldProvideSlot(slot)">
                     <slot
                       :name="slot"
                       v-bind="scope"
                     />
                   </template>
-                  <div class="controls-steps">
+                </template>
+                <div class="controls-steps">
+                  <button
+                    v-if="showYaml"
+                    type="button"
+                    class="btn role-secondary"
+                    @click="showPreviewYaml"
+                  >
+                    <t k="cruResource.previewYaml" />
+                  </button>
+                  <template
+                    v-if="showPrevious"
+                    name="back"
+                  >
                     <button
-                      v-if="showYaml"
                       type="button"
                       class="btn role-secondary"
-                      @click="showPreviewYaml"
+                      @click="back()"
                     >
-                      <t k="cruResource.previewYaml" />
+                      <t k="wizard.previous" />
                     </button>
-                    <template
-                      v-if="showPrevious"
-                      name="back"
+                  </template>
+                  <template
+                    v-if="activeStepIndex === visibleSteps.length-1"
+                    name="finish"
+                  >
+                    <AsyncButton
+                      v-if="!showSubtypeSelection && !isView"
+                      ref="save"
+                      :disabled="!activeStep.ready"
+                      :mode="finishButtonMode || mode"
+                      @click="$emit('finish', $event)"
+                    />
+                  </template>
+                  <template
+                    v-else
+                    name="next"
+                  >
+                    <button
+                      :disabled="!canNext"
+                      type="button"
+                      class="btn role-primary"
+                      @click="next()"
                     >
-                      <button
-                        type="button"
-                        class="btn role-secondary"
-                        @click="back()"
-                      >
-                        <t k="wizard.previous" />
-                      </button>
-                    </template>
-                    <template
-                      v-if="activeStepIndex === visibleSteps.length-1"
-                      name="finish"
-                    >
-                      <AsyncButton
-                        v-if="!showSubtypeSelection && !isView"
-                        ref="save"
-                        :disabled="!activeStep.ready"
-                        :mode="finishButtonMode || mode"
-                        @click="$emit('finish', $event)"
-                      />
-                    </template>
-                    <template
-                      v-else
-                      name="next"
-                    >
-                      <button
-                        :disabled="!canNext"
-                        type="button"
-                        class="btn role-primary"
-                        @click="next()"
-                      >
-                        <t k="wizard.next" />
-                      </button>
-                    </template>
-                  </div>
-                </CruResourceFooter>
-              </template>
+                      <t k="wizard.next" />
+                    </button>
+                  </template>
+                </div>
+              </CruResourceFooter>
             </template>
           </Wizard>
         </div>
@@ -646,17 +692,22 @@ export default {
           >
             <!-- Pass down templates provided by the caller -->
             <template
-              v-for="(_, slot) of $scopedSlots"
-              v-slot:[slot]="scope"
+              v-for="(_, slot) of $slots"
+              #[slot]="scope"
+              :key="slot"
             >
-              <slot
-                :name="slot"
-                v-bind="scope"
-              />
+              <template v-if="shouldProvideSlot(slot)">
+                <slot
+                  :name="slot"
+                  v-bind="scope"
+                />
+              </template>
             </template>
-
-            <template #default>
-              <div v-if="!isView">
+            <template
+              v-if="!isView"
+              #default
+            >
+              <div>
                 <button
                   v-if="showYaml"
                   :data-testid="componentTestid + '-yaml'"
@@ -680,8 +731,9 @@ export default {
         </slot>
       </template>
       <!------ YAML ------>
+      <!-- Hide this section until it's needed. This means we don't need to upfront create initialYaml -->
       <section
-        v-else-if="showYaml"
+        v-else-if="showYaml && !showAsForm"
         class="cru-resource-yaml-container resource-container cru__content"
       >
         <ResourceYaml
@@ -698,7 +750,7 @@ export default {
           class="resource-container cru__content"
           @error="e=>$emit('error', e)"
         >
-          <template #yamlFooter="{yamlSave, showPreview, yamlPreview, yamlUnpreview}">
+          <template #yamlFooter="{yamlSave, showPreview, yamlPreview, yamlUnpreview, canDiff}">
             <slot name="cru-yaml-footer">
               <CruResourceFooter
                 class="cru__footer"
@@ -755,7 +807,7 @@ export default {
           </template>
         </ResourceYaml>
       </section>
-    </form>
+    </component>
   </section>
 </template>
 
@@ -777,6 +829,10 @@ export default {
   .subtype-banner {
     .round-image {
       background-color: var(--primary);
+    }
+
+    &:focus-visible {
+      @include focus-outline;
     }
   }
 }

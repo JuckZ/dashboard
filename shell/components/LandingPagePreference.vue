@@ -15,10 +15,7 @@ export default {
   },
 
   async fetch() {
-    this.clusters = await this.$store.dispatch('management/findAll', {
-      type: MANAGEMENT.CLUSTER,
-      opt:  { url: MANAGEMENT.CLUSTER }
-    });
+    this.clusters = await this.$store.dispatch('management/findAll', { type: MANAGEMENT.CLUSTER });
   },
 
   data() {
@@ -97,7 +94,7 @@ export default {
       if (neu) {
         this.afterLoginRoute = neu;
       } else {
-        this.afterLoginRoute = this.routeFromDropdown?.value;
+        this.afterLoginRoute = this.routeFromDropdown?.value || this.routeDropdownOptions[0]?.value;
       }
     },
   }
@@ -114,18 +111,21 @@ export default {
       :value="afterLoginRoute"
       name="login-route"
       :options="routeRadioOptions"
-      @input="updateLoginRoute"
+      @update:value="updateLoginRoute"
     >
-      <template #2="{option, listeners}">
+      <template #2="{option}">
         <div class="custom-page">
           <RadioButton
             :label="option.label"
             :val="false"
             :value="afterLoginRoute=== 'home' || afterLoginRoute === 'last-visited'"
-            v-on="listeners"
+            :v-bind="$attrs"
+            :prevent-focus-on-radio-groups="true"
+            @update:value="updateLoginRoute(null)"
           />
           <Select
-            v-model="routeFromDropdown"
+            v-model:value="routeFromDropdown"
+            :aria-label="t('landing.landingPrefs.ariaLabelTakeMeToCluster')"
             :searchable="true"
             :disabled="afterLoginRoute === 'home' || afterLoginRoute === 'last-visited'"
             :clearable="false"

@@ -1,4 +1,5 @@
 <script>
+import { resourceNames } from '@shell/utils/string';
 import { Banner } from '@components/Banner';
 import Checkbox from '@components/Form/Checkbox/Checkbox.vue';
 import { mapGetters, mapState } from 'vuex';
@@ -6,6 +7,8 @@ import { isEmpty } from 'lodash';
 
 export default {
   name: 'PromptRemovePodDialog',
+
+  emits: ['errors'],
 
   components: {
     Banner,
@@ -30,6 +33,16 @@ export default {
     type: {
       type:     String,
       required: true
+    },
+
+    close: {
+      type:     Function,
+      required: true
+    },
+
+    doneLocation: {
+      type:    Object,
+      default: () => {}
     }
   },
 
@@ -43,49 +56,26 @@ export default {
   computed: {
     ...mapState('action-menu', ['toRemove']),
     ...mapGetters({ t: 'i18n/t' }),
-
-    plusMore() {
-      const count = this.names.length - this.names.length;
-
-      return this.t('promptRemove.andOthers', { count });
-    },
-
-    podNames() {
-      return this.names.reduce((res, name, i) => {
-        if (i >= 5) {
-          return res;
-        }
-        res += `<b>${ name }</b>`;
-        if (i === this.names.length - 1) {
-          res += this.plusMore;
-        } else {
-          res += i === this.toRemove.length - 2 ? ' and ' : ', ';
-        }
-
-        return res;
-      }, '');
-    },
   },
 
   methods: {
+    resourceNames,
     async remove(confirm) {
-      const parentComponent = this.$parent.$parent.$parent;
-
       let goTo;
 
-      if (parentComponent.doneLocation) {
+      if (this.doneLocation) {
         // doneLocation will recompute to undefined when delete request completes
-        goTo = { ...parentComponent.doneLocation };
+        goTo = { ...this.doneLocation };
       }
 
       try {
         await Promise.all(this.value.map((resource) => this.removePod(resource)));
         if ( goTo && !isEmpty(goTo) ) {
-          parentComponent.currentRouter.push(goTo);
+          this.value?.[0]?.currentRouter().push(goTo);
         }
-        parentComponent.close();
+        this.close();
       } catch (err) {
-        parentComponent.error = err;
+        this.$emit('errors', err);
         confirm(false);
       }
     },
@@ -108,13 +98,13 @@ export default {
   <div class="mt-10">
     <div class="mb-30">
       {{ t('promptRemove.attemptingToRemove', { type }) }} <span
-        v-clean-html="podNames"
-        class="machine-name"
+        v-clean-html="resourceNames(names, t)"
+        class="body"
       />
     </div>
     <div class="mb-30">
       <Checkbox
-        v-model="forceDelete"
+        v-model:value="forceDelete"
         :label="t('promptForceRemove.forceDelete')"
       />
     </div>
@@ -133,11 +123,10 @@ export default {
 </template>
 
 <style lang='scss' scoped>
+  .body {
+    font-weight: 600;
+  }
   .actions {
     text-align: right;
-  }
-
-  .machine-name {
-    font-weight: 600;
   }
 </style>

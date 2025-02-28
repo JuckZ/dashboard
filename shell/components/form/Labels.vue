@@ -53,6 +53,11 @@ export default {
       type:    Boolean,
       default: true,
     },
+
+    addIcon: {
+      type:    String,
+      default: '',
+    },
   },
 
   data() {
@@ -84,7 +89,7 @@ export default {
           </h3>
           <ToggleSwitch
             v-if="value.hasSystemLabels"
-            v-model="toggler"
+            v-model:value="toggler"
             name="label-system-toggle"
             :on-label="t('labels.labels.show')"
           />
@@ -97,19 +102,18 @@ export default {
             name="labels"
             :toggler="toggler"
           >
-            <template>
-              <KeyValue
-                key="labels"
-                :value="value.labels"
-                :protected-keys="value.systemLabels || []"
-                :toggle-filter="toggler"
-                :add-label="t('labels.addLabel')"
-                :mode="mode"
-                :read-allowed="false"
-                :value-can-be-empty="true"
-                @input="value.setLabels($event)"
-              />
-            </template>
+            <KeyValue
+              key="labels"
+              :value="value.labels"
+              :protected-keys="value.systemLabels || []"
+              :toggle-filter="toggler"
+              :add-label="t('labels.addLabel')"
+              :add-icon="addIcon"
+              :mode="mode"
+              :read-allowed="false"
+              :value-can-be-empty="true"
+              @update:value="value.setLabels($event)"
+            />
           </slot>
         </div>
       </div>
@@ -123,12 +127,15 @@ export default {
         key="annotations"
         :value="value.annotations"
         :add-label="t('labels.addAnnotation')"
+        :add-icon="addIcon"
         :mode="mode"
+        :protected-keys="value.systemAnnotations || []"
+        :toggle-filter="toggler"
         :title="t('labels.annotations.title')"
         :title-protip="annotationTitleTooltip"
         :read-allowed="false"
         :value-can-be-empty="true"
-        @input="value.setAnnotations($event)"
+        @update:value="value.setAnnotations($event)"
       />
     </div>
   </div>

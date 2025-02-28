@@ -1,6 +1,5 @@
 <script>
 import SortableTable from '@shell/components/SortableTable';
-import { AGE } from '@shell/config/table-headers';
 
 export default {
   name: 'FleetResources',
@@ -11,7 +10,12 @@ export default {
     value: {
       type:     Object,
       required: true,
-    }
+    },
+    clusterId: {
+      type:     String,
+      required: false,
+      default:  null,
+    },
   },
 
   computed: {
@@ -60,7 +64,6 @@ export default {
           sort:  'namespace',
           label: 'Namespace',
         },
-        { ...AGE }
       ];
     },
   }

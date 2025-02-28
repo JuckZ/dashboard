@@ -1,19 +1,22 @@
 <script>
+import Loading from '@shell/components/Loading';
 import ResourceTabs from '@shell/components/form/ResourceTabs';
 import FleetSummary from '@shell/components/fleet/FleetSummary';
 import { Banner } from '@components/Banner';
 import FleetResources from '@shell/components/fleet/FleetResources';
 import Tab from '@shell/components/Tabbed/Tab';
-import { FLEET } from '@shell/config/types';
+import { FLEET, MANAGEMENT } from '@shell/config/types';
 import { isHarvesterCluster } from '@shell/utils/cluster';
 import FleetBundles from '@shell/components/fleet/FleetBundles.vue';
-import { resourceCounts } from '@shell/components/ResourceSummary.vue';
 import { checkSchemasForFindAllHash } from '@shell/utils/auth';
 
 export default {
   name: 'DetailGitRepo',
 
+  emits: ['input'],
+
   components: {
+    Loading,
     FleetResources,
     FleetSummary,
     Banner,
@@ -31,31 +34,27 @@ export default {
 
   data() {
     return {
-      allFleet:             [],
-      allBundles:           [],
-      allBundleDeployments: [],
+      allFleetClusters: [],
+      allBundles:       [],
     };
   },
-
   computed: {
-
     gitRepoHasClusters() {
-      return this.value.status.desiredReadyClusters;
+      return this.value.status?.desiredReadyClusters;
+    },
+    clusterSchema() {
+      return this.$store.getters['management/schemaFor'](FLEET.CLUSTER);
     },
     harvesterClusters() {
       const harvester = {};
 
-      this.allFleet.forEach((c) => {
+      this.allFleetClusters.forEach((c) => {
         if (isHarvesterCluster(c)) {
           harvester[c.metadata.name] = c;
         }
       });
 
       return harvester;
-    },
-
-    bundleCounts() {
-      return resourceCounts(this.$store, FLEET.BUNDLE);
     },
     bundles() {
       const harvester = this.harvesterClusters;
@@ -78,15 +77,11 @@ export default {
     const allDispatches = await checkSchemasForFindAllHash({
       allBundles: {
         inStoreType: 'management',
-        type:        FLEET.BUNDLE
+        type:        FLEET.BUNDLE,
+        opt:         { excludeFields: ['metadata.managedFields', 'spec.resources'] },
       },
 
-      allBundleDeployments: {
-        inStoreType: 'management',
-        type:        FLEET.BUNDLE_DEPLOYMENT
-      },
-
-      allFleet: {
+      allFleetClusters: {
         inStoreType: 'management',
         type:        FLEET.CLUSTER
       },
@@ -96,16 +91,23 @@ export default {
       }
     }, this.$store);
 
-    this.allBundleDeployments = allDispatches.allBundleDeployments || [];
+    if (this.value.authorId && this.$store.getters['management/schemaFor'](MANAGEMENT.USER)) {
+      await this.$store.dispatch(`management/findAll`, { type: MANAGEMENT.USER }, { root: true });
+    }
+
     this.allBundles = allDispatches.allBundles || [];
-    this.allFleet = allDispatches.allFleet || [];
+    this.allFleetClusters = allDispatches.allFleetClusters || [];
   },
 
 };
 </script>
 
 <template>
-  <div class="mt-20">
+  <Loading v-if="$fetchState.pending" />
+  <div
+    v-else
+    class="mt-20"
+  >
     <FleetSummary
       v-if="gitRepoHasClusters"
       :value="value"
@@ -120,10 +122,11 @@ export default {
       {{ t('fleet.fleetSummary.noClustersGitRepo') }}
     </Banner>
     <ResourceTabs
-      v-model="value"
+      :value="value"
       mode="view"
       class="mt-20"
       :need-related="false"
+      @update:value="$emit('input', $event)"
     >
       <Tab
         v-if="!!allBundles.length"

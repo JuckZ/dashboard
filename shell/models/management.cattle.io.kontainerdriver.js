@@ -1,6 +1,7 @@
 import HybridModel from '@shell/plugins/steve/hybrid-class';
 
 const HIDDEN = ['rke', 'rancherkubernetesengine'];
+
 const V2 = ['amazoneks', 'googlegke', 'azureaks'];
 const IMPORTABLE = ['amazoneks', 'googlegke', 'azureaks'];
 
@@ -27,6 +28,13 @@ export const KONTAINER_TO_DRIVER = {
   baiducloudcontainerengine:        'baidu',
   opentelekomcloudcontainerengine:  'otccce',
 };
+
+// Legacy KEV1 Hosted cluster drivers
+export const KEV1 = [
+  'amazonelasticcontainerservice',
+  'azurekubernetesservice',
+  'googlekubernetesengine',
+];
 
 // And the Import page has even shorter ones that don't match kontainer or create...
 export const DRIVER_TO_IMPORT = {

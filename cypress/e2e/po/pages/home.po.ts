@@ -4,6 +4,9 @@ import BannerGraphicPo from '@/cypress/e2e/po/components/banner-graphic.po';
 import BannersPo from '@/cypress/e2e/po/components/banners.po';
 import SimpleBoxPo from '@/cypress/e2e/po/components/simple-box.po';
 import HomeClusterListPo from '@/cypress/e2e/po/lists/home-cluster-list.po';
+import BurgerMenuPo from '@/cypress/e2e/po/side-bars/burger-side-menu.po';
+
+const burgerMenu = new BurgerMenuPo();
 
 export default class HomePagePo extends PagePo {
   static url = '/home'
@@ -33,6 +36,11 @@ export default class HomePagePo extends PagePo {
     super(HomePagePo.url);
   }
 
+  static navTo() {
+    BurgerMenuPo.toggle();
+    burgerMenu.home().click();
+  }
+
   title(): Cypress.Chainable<string> {
     return cy.getId('banner-title').invoke('text');
   }
@@ -53,8 +61,16 @@ export default class HomePagePo extends PagePo {
     cy.wait(['@restoreBanners', '@restoreBanners']);
   }
 
+  toggleBanner() {
+    const pageActionsPo = new PageActions();
+
+    cy.intercept('PUT', 'v1/userpreferences/*').as('toggleBanner');
+    pageActionsPo.toggleBanner().click();
+    cy.wait('@toggleBanner');
+  }
+
   list(): HomeClusterListPo {
-    return new HomeClusterListPo('[data-testid="cluster-list-container"]');
+    return new HomeClusterListPo('[data-testid="sortable-table-list-container"]');
   }
 
   manageButton() {
@@ -96,6 +112,14 @@ export default class HomePagePo extends PagePo {
   }
 
   /**
+    * Get the home page banner image
+   * @returns
+   */
+  getBrandBannerImage(): Cypress.Chainable {
+    return cy.getId('banner-brand__img');
+  }
+
+  /**
    * Click support link
    * Cypress does not support multiple tabs - must remove target attribute before clicking
    * https://docs.cypress.io/guides/references/trade-offs#Multiple-tabs
@@ -114,5 +138,11 @@ export default class HomePagePo extends PagePo {
         expect(el).to.not.have.attr('target');
       }).click();
     }
+  }
+
+  checkSupportLinkText(index: number, text: string) {
+    return this.supportLinks().eq(index).then((el) => {
+      expect(el.text().trim()).to.equal(text);
+    });
   }
 }

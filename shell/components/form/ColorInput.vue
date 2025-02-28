@@ -2,6 +2,8 @@
 import { _EDIT, _VIEW } from '@shell/config/query-params';
 
 export default {
+  emits: ['update:value'],
+
   props: {
     value: {
       type:    String,
@@ -38,6 +40,11 @@ export default {
     componentTestid: {
       type:    String,
       default: 'color-input'
+    },
+
+    disabled: {
+      type:    Boolean,
+      default: false,
     }
   },
 
@@ -54,21 +61,44 @@ export default {
      */
     inputValue() {
       return this.value ? this.value : this.defaultValue;
+    },
+
+    isDisabled() {
+      const disabled = this.disabled;
+
+      return this.mode !== this.editMode || disabled;
     }
   },
 
   mounted() {
     // Ensures that if the default value is used, the model is updated with it
-    this.$emit('input', this.inputValue);
-  }
+    this.$emit('update:value', this.inputValue);
+  },
+
+  methods: {
+    handleKeyup(ev) {
+      if (this.isDisabled) {
+        return '';
+      }
+
+      return this.$refs.input.click(ev);
+    }
+  },
+
+  // according to https://www.w3.org/TR/html-aria/
+  // input type="color" has no applicable role
+  // and only aria-label and aria-disabled
 };
 </script>
 
 <template>
   <div
     class="color-input"
-    :class="{[mode]:mode, disabled: mode !== editMode}"
+    :class="{[mode]:mode, disabled: isDisabled}"
     :data-testid="componentTestid + '-color-input'"
+    :tabindex="isDisabled ? -1 : 0"
+    @keydown.space.prevent
+    @keyup.enter.space.stop="handleKeyup($event)"
   >
     <label class="text-label"><t
       v-if="labelKey"
@@ -76,6 +106,7 @@ export default {
       :raw="true"
     />{{ label }}</label>
     <div
+      :data-testid="componentTestid + '-color-input_preview-container'"
       class="preview-container"
       @click.stop="$refs.input.click($event)"
     >
@@ -85,10 +116,13 @@ export default {
       >
         <input
           ref="input"
+          :aria-disabled="isDisabled ? 'true' : 'false'"
+          :aria-label="t('generic.colorPicker')"
           type="color"
-          :disabled="mode !== editMode"
+          :disabled="isDisabled"
+          tabindex="-1"
           :value="inputValue"
-          @input="$emit('input', $event.target.value)"
+          @input="$emit('update:value', $event.target.value)"
         >
       </span>
       <span class="text-muted color-value">{{ inputValue }}</span>
@@ -101,6 +135,10 @@ export default {
   border: 1px solid var(--border);
   border-radius: var(--border-radius);
   padding: 10px;
+
+  &:focus-visible {
+    @include focus-outline;
+  }
 
   &.disabled, &.disabled .selected, &[disabled], &[disabled]:hover {
     color: var(--input-disabled-text);

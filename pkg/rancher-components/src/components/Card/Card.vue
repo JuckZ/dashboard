@@ -1,7 +1,9 @@
 <script lang="ts">
-import Vue from 'vue';
+import { defineComponent, PropType } from 'vue';
+import { useBasicSetupFocusTrap } from '@shell/composables/focusTrap';
 
-export default Vue.extend({
+export default defineComponent({
+
   name:  'Card',
   props: {
     /**
@@ -22,7 +24,7 @@ export default Vue.extend({
      * The function to invoke when the default action button is clicked.
      */
     buttonAction: {
-      type:    Function,
+      type:    Function as PropType<(event: MouseEvent) => void>,
       default: (): void => { }
     },
     /**
@@ -50,12 +52,30 @@ export default Vue.extend({
       type:    Boolean,
       default: false,
     },
+    triggerFocusTrap: {
+      type:    Boolean,
+      default: false,
+    },
+  },
+  setup(props) {
+    if (props.triggerFocusTrap) {
+      useBasicSetupFocusTrap('#focus-trap-card-container-element', {
+        // needs to be false because of import YAML modal from header
+        // where the YAML editor itself is a focus trap
+        // and we can't have it superseed the "escape key" to blur that UI element
+        // In this case the focus trap moves the focus out of the modal
+        // correctly once it closes because of the "onBeforeUnmount" trigger
+        escapeDeactivates: false,
+        allowOutsideClick: true,
+      });
+    }
   }
 });
 </script>
 
 <template>
   <div
+    id="focus-trap-card-container-element"
     class="card-container"
     :class="{'highlight-border': showHighlightBorder, 'card-sticky': sticky}"
     data-testid="card"
@@ -151,7 +171,7 @@ export default Vue.extend({
 
       .card-body {
         justify-content: flex-start;
-        overflow: scroll;
+        overflow: auto;
       }
 
       > * {

@@ -1,5 +1,5 @@
 import {
-  CAPI, MANAGEMENT, NORMAN, SNAPSHOT, HCI
+  CAPI, MANAGEMENT, NAMESPACE, NORMAN, SNAPSHOT, HCI, LOCAL_CLUSTER
 } from '@shell/config/types';
 import SteveModel from '@shell/plugins/steve/steve-class';
 import { findBy } from '@shell/utils/array';
@@ -9,7 +9,8 @@ import { ucFirst } from '@shell/utils/string';
 import { compare } from '@shell/utils/version';
 import { AS, MODE, _VIEW, _YAML } from '@shell/config/query-params';
 import { HARVESTER_NAME as HARVESTER } from '@shell/config/features';
-import { CAPI as CAPI_ANNOTATIONS } from '@shell/config/labels-annotations';
+import { CAPI as CAPI_ANNOTATIONS, NODE_ARCHITECTURE } from '@shell/config/labels-annotations';
+import { KEV1 } from '@shell/models/management.cattle.io.kontainerdriver';
 
 /**
  * Class representing Cluster resource.
@@ -165,7 +166,46 @@ export default class ProvCluster extends SteveModel {
         enabled: canSaveRKETemplate,
       }, { divider: true }];
 
-    return actions.concat(out);
+    // Harvester Cluster 1:1 Harvester Cloud Cred
+    if (this.cloudCredential?.canRenew || this.cloudCredential?.canBulkRenew) {
+      out.splice(0, 0, { divider: true });
+      out.splice(0, 0, {
+        action:     'renew',
+        enabled:    this.cloudCredential?.canRenew,
+        bulkable:   this.cloudCredential?.canBulkRenew,
+        bulkAction: 'renewBulk',
+        icon:       'icon icon-fw icon-refresh',
+        label:      this.$rootGetters['i18n/t']('cluster.cloudCredentials.renew'),
+      });
+    }
+
+    const all = actions.concat(out);
+
+    // If the cluster is a KEV1 cluster then prevent edit
+    if (this.isKev1) {
+      const edit = all.find((action) => action.action === 'goToEdit');
+
+      if (edit) {
+        edit.enabled = false;
+      }
+    }
+
+    // If we have a helper that wants to modify the available actions, let it do it
+    if (this.customProvisionerHelper?.availableActions) {
+      // Provider can either modify the provided list or return one of its own
+      return this.customProvisionerHelper?.availableActions(this, all) || all;
+    }
+
+    return all;
+  }
+
+  get detailLocation() {
+    // Prevent going to detail page for a KEV1 cluster
+    if (this.isKev1) {
+      return undefined;
+    }
+
+    return super.detailLocation;
   }
 
   get normanCluster() {
@@ -178,6 +218,16 @@ export default class ProvCluster extends SteveModel {
     const out = this.$rootGetters['rancher/byId'](NORMAN.CLUSTER, name);
 
     return out;
+  }
+
+  async findNormanCluster() {
+    const name = this.status?.clusterName;
+
+    if ( !name ) {
+      return null;
+    }
+
+    return await this.$dispatch('rancher/find', { type: NORMAN.CLUSTER, id: name }, { root: true });
   }
 
   explore() {
@@ -222,7 +272,7 @@ export default class ProvCluster extends SteveModel {
   }
 
   get canDelete() {
-    return super.canDelete && this.stateObj.name !== 'removing';
+    return super.canDelete && this.stateObj?.name !== 'removing';
   }
 
   get canEditYaml() {
@@ -239,9 +289,53 @@ export default class ProvCluster extends SteveModel {
     return providers.includes(this.provisioner);
   }
 
+  get isPrivateHostedProvider() {
+    if (this.isHostedKubernetesProvider && this.mgmt && this.provisioner) {
+      switch (this.provisioner.toLowerCase()) {
+      case 'gke':
+        return this.mgmt.spec?.gkeConfig?.privateClusterConfig?.enablePrivateEndpoint;
+      case 'eks':
+        return this.mgmt.spec?.eksConfig?.privateAccess;
+      case 'aks':
+        return this.mgmt.spec?.aksConfig?.privateCluster;
+      }
+    }
+
+    return false;
+  }
+
+  get isLocal() {
+    return this.mgmt?.isLocal;
+  }
+
+  // Is the cluster a legacy (unsupported) KEV1 cluster?
+  get isKev1() {
+    return KEV1.includes(this.mgmt?.spec?.genericEngineConfig?.driverName);
+  }
+
   get isImported() {
-    // As of Rancher v2.6.7, this returns false for imported K3s clusters,
-    // in which this.provisioner is `k3s`.
+    if (this.isLocal) {
+      return false;
+    }
+
+    // imported rke2 and k3s have status.driver === rke2 and k3s respectively
+    // Provisioned rke2 and k3s have status.driver === imported
+    if (this.mgmt?.status?.provider === 'k3s' || this.mgmt?.status?.provider === 'rke2') {
+      return this.mgmt?.status?.driver === this.mgmt?.status?.provider;
+    }
+
+    // imported KEv2
+    // we can't rely on this.provisioner to determine imported-ness for these clusters, as it will return 'aks' 'eks' 'gke' for both provisioned and imported clusters
+    const kontainerConfigs = ['aksConfig', 'eksConfig', 'gkeConfig'];
+
+    const isImportedKontainer = kontainerConfigs.filter((key) => {
+      return this.mgmt?.spec?.[key]?.imported === true;
+    }).length;
+
+    if (isImportedKontainer) {
+      return true;
+    }
+
     return this.provisioner === 'imported';
   }
 
@@ -262,8 +356,6 @@ export default class ProvCluster extends SteveModel {
   }
 
   get isImportedK3s() {
-    // As of Rancher v2.6.7, this returns false for imported K3s clusters,
-    // in which this.provisioner is `k3s`.
     return this.isImported && this.isK3s;
   }
 
@@ -272,7 +364,7 @@ export default class ProvCluster extends SteveModel {
   }
 
   get isK3s() {
-    return this.mgmt?.status?.provider === 'k3s';
+    return this.mgmt?.status ? this.mgmt?.status.provider === 'k3s' : (this.spec?.kubernetesVersion || '').includes('k3s') ;
   }
 
   get isRke2() {
@@ -280,7 +372,8 @@ export default class ProvCluster extends SteveModel {
   }
 
   get isRke1() {
-    return !!this.mgmt?.spec?.rancherKubernetesEngineConfig;
+    // rancherKubernetesEngineConfig is not defined on imported RKE1 clusters
+    return !!this.mgmt?.spec?.rancherKubernetesEngineConfig || this.mgmt?.labels['provider.cattle.io'] === 'rke';
   }
 
   get isHarvester() {
@@ -288,19 +381,11 @@ export default class ProvCluster extends SteveModel {
   }
 
   get mgmtClusterId() {
-    return this.mgmt?.id || this.id?.replace(`${ this.metadata.namespace }/`, '');
+    return this.status?.clusterName;
   }
 
   get mgmt() {
-    const name = this.status?.clusterName;
-
-    if ( !name ) {
-      return null;
-    }
-
-    const out = this.$rootGetters['management/byId'](MANAGEMENT.CLUSTER, name);
-
-    return out;
+    return this.$rootGetters['management/byId'](MANAGEMENT.CLUSTER, this.mgmtClusterId);
   }
 
   get isReady() {
@@ -348,6 +433,11 @@ export default class ProvCluster extends SteveModel {
   }
 
   get provisionerDisplay() {
+    // Allow a model extension to override the display of the provisioner
+    if (this.customProvisionerHelper?.provisionerDisplay) {
+      return this.customProvisionerHelper?.provisionerDisplay(this);
+    }
+
     let provisioner = (this.provisioner || '').toLowerCase();
 
     // RKE provisioner can actually do K3s too...
@@ -357,6 +447,8 @@ export default class ProvCluster extends SteveModel {
       provisioner = 'k3s';
     } else if ( this.isImportedRke2 ) {
       provisioner = 'rke2';
+    } else if ((this.isImported || this.isLocal) && this.isRke1) {
+      provisioner = 'rke';
     }
 
     return this.$rootGetters['i18n/withFallback'](`cluster.provider."${ provisioner }"`, null, ucFirst(provisioner));
@@ -364,6 +456,38 @@ export default class ProvCluster extends SteveModel {
 
   get providerLogo() {
     return this.mgmt?.providerLogo;
+  }
+
+  get nodesArchitecture() {
+    const obj = {};
+
+    this.nodes?.forEach((node) => {
+      if (!node.metadata?.state?.transitioning) {
+        const architecture = node.status?.nodeLabels?.[NODE_ARCHITECTURE];
+
+        const key = architecture || this.t('cluster.architecture.label.unknown');
+
+        obj[key] = (obj[key] || 0) + 1;
+      }
+    });
+
+    return obj;
+  }
+
+  get architecture() {
+    const keys = Object.keys(this.nodesArchitecture);
+
+    switch (keys.length) {
+    case 0:
+      return { label: this.t('generic.provisioning') };
+    case 1:
+      return { label: keys[0] };
+    default:
+      return {
+        label:   this.t('cluster.architecture.label.mixed'),
+        tooltip: keys.reduce((acc, k) => `${ acc }${ k }: ${ this.nodesArchitecture[k] }<br>`, '')
+      };
+    }
   }
 
   get kubernetesVersion() {
@@ -409,6 +533,10 @@ export default class ProvCluster extends SteveModel {
   }
 
   get machineProviderDisplay() {
+    if (this.customProvisionerHelper?.machineProviderDisplay) {
+      return this.customProvisionerHelper?.machineProviderDisplay(this);
+    }
+
     if ( this.isImported ) {
       return null;
     }
@@ -815,11 +943,12 @@ export default class ProvCluster extends SteveModel {
   get agentConfig() {
     // The one we want is the first one with no selector.
     // If there are multiple with no selector, that will fall under the unsupported message below.
-    return this.spec.rkeConfig.machineSelectorConfig.find((x) => !x.machineLabelSelector).config;
+    return this.spec.rkeConfig?.machineSelectorConfig
+      ?.find((x) => !x.machineLabelSelector)?.config || { };
   }
 
   get cloudProvider() {
-    return this.agentConfig['cloud-provider-name'];
+    return this.agentConfig?.['cloud-provider-name'];
   }
 
   get canClone() {
@@ -866,9 +995,97 @@ export default class ProvCluster extends SteveModel {
     if ( res?._status === 204 ) {
       await this.$dispatch('ws.resource.remove', { data: this });
     }
+
+    // If this cluster has a custom provisioner, allow it to do custom deletion
+    if (this.customProvisionerHelper?.postDelete) {
+      return this.customProvisionerHelper?.postDelete(this);
+    }
+  }
+
+  /**
+   * Get the custom provisioner helper for this model
+   */
+  get customProvisionerHelper() {
+    // Find the first model extension that says it can be used for this model
+    return this.modelExtensions.find((modelExt) => modelExt.useFor ? modelExt.useFor(this) : false);
+  }
+
+  get groupByParent() {
+    // Customer helper can report if the cluster has a parent cluster
+    return this.customProvisionerHelper?.parentCluster?.(this) || this.t('resourceTable.groupLabel.notInACluster');
   }
 
   get hasError() {
-    return this.status?.conditions?.some((condition) => condition.error === true);
+    // Before we were just checking for this.status?.conditions?.some((condition) => condition.error === true)
+    // but this is wrong as an error might exist but it might not be meaningful in the context of readiness of a cluster
+    // which is what this 'hasError' is used for.
+    // We now check if there's a ready condition after an error, which helps dictate the readiness of a cluster
+    // Based on the findings in https://github.com/rancher/dashboard/issues/10043
+    if (this.status?.conditions && this.status?.conditions.length) {
+      // if there are errors, we compare with how recent the "Ready" condition is compared to that error, otherwise we just move on
+      if (this.status?.conditions.some((c) => c.error === true)) {
+        // there's no ready condition and has an error, mark it
+        if (!this.status?.conditions.some((c) => c.type === 'Ready')) {
+          return true;
+        }
+
+        const filteredConditions = this.status?.conditions.filter((c) => c.error === true || c.type === 'Ready');
+        const mostRecentCondition = filteredConditions.reduce((a, b) => ((a.lastUpdateTime > b.lastUpdateTime) ? a : b));
+
+        return mostRecentCondition.error;
+      }
+    }
+
+    return false;
+  }
+
+  get namespaceLocation() {
+    const localCluster = this.$rootGetters['management/byId'](MANAGEMENT.CLUSTER, LOCAL_CLUSTER);
+
+    if (localCluster) {
+      return {
+        name:   'c-cluster-product-resource-id',
+        params: {
+          cluster:  localCluster.id,
+          product:  this.$rootGetters['productId'],
+          resource: NAMESPACE,
+          id:       this.namespace
+        }
+      };
+    }
+
+    return null;
+  }
+
+  // JSON Paths that should be folded in the YAML editor by default
+  get yamlFolding() {
+    return [
+      'spec.rkeConfig.machinePools.dynamicSchemaSpec',
+    ];
+  }
+
+  get description() {
+    return super.description || this.mgmt?.description;
+  }
+
+  renew() {
+    return this.cloudCredential?.renew();
+  }
+
+  renewBulk(clusters = []) {
+    // In theory we don't need to filter by cloudCred, but do so for safety
+    const cloudCredentials = clusters.filter((c) => c.cloudCredential).map((c) => c.cloudCredential);
+
+    return this.cloudCredential?.renewBulk(cloudCredentials);
+  }
+
+  get cloudCredential() {
+    return this.$rootGetters['rancher/all'](NORMAN.CLOUD_CREDENTIAL).find((cc) => cc.id === this.spec.cloudCredentialSecretName);
+  }
+
+  get cloudCredentialWarning() {
+    const expireData = this.cloudCredential?.expireData;
+
+    return expireData?.expired || expireData?.expiring;
   }
 }

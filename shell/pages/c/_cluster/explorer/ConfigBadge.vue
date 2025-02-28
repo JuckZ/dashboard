@@ -1,4 +1,5 @@
 <script>
+import { _EDIT } from '@shell/config/query-params';
 export default {
   props: {
     cluster: {
@@ -10,13 +11,13 @@ export default {
   name: 'ConfigBadge',
 
   computed: {
-    hasBadge() {
-      return !!this.cluster?.badge;
+    tooltip() {
+      return this.t('clusterBadge.customizeAppearance');
     }
   },
   methods: {
     customBadgeDialog() {
-      this.$store.dispatch('cluster/promptModal', { component: 'AddCustomBadgeDialog' });
+      this.$store.dispatch('cluster/promptModal', { component: 'AddCustomBadgeDialog', componentProps: { mode: _EDIT } });
     },
   },
 };
@@ -25,15 +26,16 @@ export default {
 <template>
   <div class="config-badge">
     <div>
-      <a
-        class="badge-install"
+      <button
+        v-clean-tooltip="{content: tooltip, triggers: ['hover', 'touch', 'focus'] }"
+        v-stripped-aria-label="tooltip"
+        class="badge-install btn btn-sm role-secondary"
         data-testid="add-custom-cluster-badge"
+        role="button"
         @click="customBadgeDialog"
       >
-        <i class="icon icon-cluster" />
-        <span v-if="hasBadge">{{ t('clusterBadge.editLabel') }}</span>
-        <span v-else>{{ t('clusterBadge.addLabel') }}</span>
-      </a>
+        <i class="icon icon-brush-icon" />
+      </button>
     </div>
   </div>
 </template>
@@ -46,9 +48,12 @@ export default {
     display: flex;
     margin-left: 10px;
 
+    &:hover {
+      border-color: var(--lightest);
+    }
+
     > I {
       line-height: inherit;
-      margin-right: 4px;
     }
 
     &:focus {

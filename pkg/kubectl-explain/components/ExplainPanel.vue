@@ -4,6 +4,8 @@ import Markdown from '@shell/components/Markdown';
 export default {
   name: 'ExplainPanel',
 
+  emits: ['navigate'],
+
   components: { Markdown },
 
   props: {
@@ -15,10 +17,6 @@ export default {
       type:     Boolean,
       required: true,
     },
-    $t: {
-      type:     Function,
-      required: true,
-    }
   },
 
   data() {
@@ -32,7 +30,7 @@ export default {
     if (this.expandAll) {
       this.fields.forEach((field) => {
         if (field.$$ref) {
-          this.$set(this.expanded, field.name, this.expandAll);
+          this.expanded[field.name] = this.expandAll;
         }
       });
     }
@@ -43,7 +41,7 @@ export default {
       if (neu !== old) {
         this.fields.forEach((field) => {
           if (field.$$ref) {
-            this.$set(this.expanded, field.name, neu);
+            this.expanded[field.name] = neu;
           }
         });
       }
@@ -71,7 +69,7 @@ export default {
      * Expand a field
      */
     expand(field) {
-      this.$set(this.expanded, field, !this.expanded[field]);
+      this.expanded[field] = !this.expanded[field];
     },
     /**
      * Navigate to a field type - this loads it in place of the current definition,
@@ -97,11 +95,11 @@ export default {
       v-if="fields.length"
       class="title"
     >
-      {{ $t('kubectl-explain.fields') }}
+      {{ t('kubectl-explain.fields') }}
     </div>
     <div
-      v-for="field in fields"
-      :key="field.name"
+      v-for="(field, i) in fields"
+      :key="i"
     >
       <div class="field-section">
         <div class="field">
@@ -111,8 +109,13 @@ export default {
             :href="field.$moreInfo"
             target="_blank"
             class="field-link"
+            role="link"
+            :aria-label="t('kubectl-explain.externalLinkInfo', { name: field.name })"
           >
-            <i class="icon icon-external-link" />
+            <i
+              class="icon icon-external-link"
+              :alt="t('kubectl-explain.externalLink')"
+            />
           </a>
         </div>
         <div
@@ -136,30 +139,36 @@ export default {
           <div
             v-if="field.$refName"
             class="field-type field-expander"
+            tabindex="0"
+            role="button"
+            :aria-expanded="expanded[field.name]"
             @click="expand(field.name)"
+            @keyup.enter.space="expand(field.name)"
           >
             {{ field.$refNameShort }}
             <i
               v-if="!expanded[field.name]"
               class="icon icon-chevron-down"
+              :alt="t('kubectl-explain.areaCollapsed')"
             />
             <i
               v-else
               class="icon icon-chevron-up"
+              :alt="t('kubectl-explain.areaExpanded')"
             />
           </div>
           <div
             v-else
             class="field-type"
           >
-            {{ $t('kubectl-explain.object') }}
+            {{ t('kubectl-explain.object') }}
           </div>
         </div>
       </div>
       <div class="ml-20">
         <Markdown
           v-if="field.description"
-          v-model="field.description"
+          v-model:value="field.description"
         />
         <div
           v-if="expanded[field.name]"
@@ -168,14 +177,20 @@ export default {
           <a
             href="#"
             class="sub-type-link"
+            role="button"
+            :aria-label="t('kubectl-explain.navigateToBreadcrumb', { breadcrumb: field.$refName })"
             @click="navigate(field.$breadcrumbs)"
+            @keyup.enter.space="navigate(field.$breadcrumbs)"
           >
             {{ field.$refName }}
           </a>
           <a
             href="#"
             class="sub-type-link"
+            role="button"
+            :aria-label="t('kubectl-explain.navigateToBreadcrumb', { breadcrumb: field.$refName })"
             @click="navigate(field.$breadcrumbs)"
+            @keyup.enter.space="navigate(field.$breadcrumbs)"
           >
             <i class="sub-name-goto icon icon-upload" />
           </a>
@@ -184,7 +199,6 @@ export default {
           v-if="expanded[field.name]"
           :expand-all="expandAll"
           :definition="field.$$ref"
-          :$t="$t"
           class="embedded"
           @navigate="navigate"
         />
@@ -302,11 +316,16 @@ export default {
       color: var(--link-text);
       cursor: pointer;
     }
+
+    &:focus-visible {
+      @include focus-outline;
+      outline-offset: 2px;
+    }
   }
 </style>
 <style lang="scss" scoped>
   .markdown {
-    ::v-deep {
+    :deep() {
       P {
         line-height: 1.25;
         margin-bottom: 10px;

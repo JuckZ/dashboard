@@ -11,13 +11,13 @@ import { mapGetters } from 'vuex';
 import { Banner } from '@components/Banner';
 import ResourceTable from '@shell/components/ResourceTable';
 import CopyToClipboardText from '@shell/components/CopyToClipboardText';
+import TabTitle from '@shell/components/TabTitle';
 
 const API_ENDPOINT = '/v3';
 
 export default {
-  layout:     'plain',
   components: {
-    CopyToClipboardText, BackLink, Banner, PromptChangePassword, Loading, ResourceTable, Principal
+    CopyToClipboardText, BackLink, Banner, PromptChangePassword, Loading, ResourceTable, Principal, TabTitle
   },
   mixins: [BackRoute],
   async fetch() {
@@ -114,7 +114,7 @@ export default {
 
   methods: {
     addKey() {
-      this.$router.push({ path: 'account/create-key' });
+      this.$router.push({ name: 'account-create-key' });
     },
     async calcCanChangePassword() {
       if (!this.$store.getters['auth/enabled']) {
@@ -144,12 +144,15 @@ export default {
   <Loading v-if="$fetchState.pending" />
   <div v-else>
     <BackLink :link="backLink" />
-    <h1 v-t="'accountAndKeys.title'" />
+    <h1>
+      <TabTitle breadcrumb="vendor-only">
+        {{ t('accountAndKeys.title') }}
+      </TabTitle>
+    </h1>
 
     <h2 v-t="'accountAndKeys.account.title'" />
     <div class="account">
       <Principal
-        :key="principal.id"
         :value="principal.id"
         :use-muted="false"
         :show-labels="true"
@@ -157,6 +160,8 @@ export default {
       <div>
         <button
           v-if="canChangePassword"
+          role="button"
+          :aria-label="t('accountAndKeys.account.change')"
           type="button"
           class="btn role-primary"
           data-testid="account_change_password"
@@ -179,6 +184,8 @@ export default {
       </div>
       <button
         v-if="apiKeySchema"
+        role="button"
+        :aria-label="t('accountAndKeys.apiKeys.add.label')"
         class="btn role-primary add mb-20"
         data-testid="account_create_api_keys"
         @click="addKey"

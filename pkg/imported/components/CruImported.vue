@@ -1,0 +1,511 @@
+<script>
+import { set } from '@shell/utils/object';
+import { mapGetters } from 'vuex';
+import { defineComponent } from 'vue';
+import { allHash } from '@shell/utils/promise';
+import isEmpty from 'lodash/isEmpty';
+import { _CREATE, _EDIT } from '@shell/config/query-params';
+import CreateEditView from '@shell/mixins/create-edit-view';
+import FormValidation from '@shell/mixins/form-validation';
+import CruResource from '@shell/components/CruResource.vue';
+import Loading from '@shell/components/Loading.vue';
+import Accordion from '@components/Accordion/Accordion.vue';
+import Banner from '@components/Banner/Banner.vue';
+import ClusterMembershipEditor, { canViewClusterMembershipEditor } from '@shell/components/form/Members/ClusterMembershipEditor.vue';
+import Labels from '@shell/components/form/Labels.vue';
+import Basics from '@pkg/imported/components/Basics.vue';
+import ACE from '@shell/edit/provisioning.cattle.io.cluster/tabs/networking/ACE';
+import { NORMAN, MANAGEMENT, CAPI, HCI } from '@shell/config/types';
+import KeyValue from '@shell/components/form/KeyValue';
+import { Checkbox } from '@components/Form/Checkbox';
+import { NAME as HARVESTER_MANAGER } from '@shell/config/harvester-manager-types';
+import { HARVESTER as HARVESTER_FEATURE, mapFeature } from '@shell/store/features';
+import { HIDE_DESC, mapPref } from '@shell/store/prefs';
+import { addObject } from '@shell/utils/array';
+import NameNsDescription from '@shell/components/form/NameNsDescription';
+import genericImportedClusterValidators from '../util/validators';
+import LabeledInput from '@components/Form/LabeledInput/LabeledInput.vue';
+
+const HARVESTER_HIDE_KEY = 'cm-harvester-import';
+const defaultCluster = {
+  agentEnvVars:   [],
+  labels:         {},
+  annotations:    {},
+  importedConfig: { privateRegistryURL: null }
+};
+
+export default defineComponent({
+  name: 'CruImported',
+
+  components: {
+    Basics, ACE, LabeledInput, Loading, CruResource, KeyValue, NameNsDescription, Accordion, Banner, ClusterMembershipEditor, Labels, Checkbox
+  },
+
+  mixins: [CreateEditView, FormValidation],
+
+  props: {
+
+    mode: {
+      type:    String,
+      default: _CREATE
+    },
+
+    // provisioning cluster object
+    value: {
+      type:    Object,
+      default: () => {
+        return {};
+      }
+    }
+  },
+
+  async fetch() {
+    const store = this.$store;
+
+    if (this.value.id) {
+      const liveNormanCluster = await this.value.findNormanCluster();
+
+      this.normanCluster = await store.dispatch(`rancher/clone`, { resource: liveNormanCluster });
+      this.config = this.normanCluster.rke2Config || this.normanCluster.k3sConfig;
+      if ( this.normanCluster && isEmpty(this.normanCluster.localClusterAuthEndpoint) ) {
+        set(this.normanCluster, 'localClusterAuthEndpoint', { enabled: false });
+      }
+      if ( this.normanCluster && !this.normanCluster?.agentEnvVars) {
+        this.normanCluster.agentEnvVars = [];
+      }
+      if ( this.normanCluster && !this.normanCluster?.importedConfig) {
+        this.normanCluster.importedConfig = {};
+      }
+
+      this.showPrivateRegistryInput = !!this.normanCluster?.importedConfig?.privateRegistryURL;
+      this.getVersions();
+    } else {
+      this.normanCluster = await store.dispatch('rancher/create', { type: NORMAN.CLUSTER, ...defaultCluster }, { root: true });
+    }
+  },
+
+  data() {
+    return {
+      showPrivateRegistryInput: false,
+      normanCluster:            { name: '', importedConfig: { privateRegistryURL: null } },
+      loadingVersions:          false,
+      membershipUpdate:         {},
+      config:                   null,
+      allVersions:              [],
+      defaultVer:               '',
+      fvFormRuleSets:           [{
+        path:  'name',
+        rules: ['clusterNameRequired', 'clusterNameChars', 'clusterNameStartEnd', 'clusterNameLength'],
+      }, {
+        path:  'workerConcurrency',
+        rules: ['workerConcurrencyRule']
+      }, {
+        path:  'controlPlaneConcurrency',
+        rules: ['controlPlaneConcurrencyRule']
+      }, {
+        path:  'normanCluster.importedConfig.privateRegistryURL',
+        rules: ['registryUrl']
+      }
+      ],
+    };
+  },
+
+  created() {
+    this.registerAfterHook(this.saveRoleBindings, 'save-role-bindings');
+  },
+
+  computed: {
+    ...mapGetters({ t: 'i18n/t' }),
+    fvExtraRules() {
+      return {
+        clusterNameRequired:         genericImportedClusterValidators.clusterNameRequired(this),
+        clusterNameChars:            genericImportedClusterValidators.clusterNameChars(this),
+        clusterNameStartEnd:         genericImportedClusterValidators.clusterNameStartEnd(this),
+        clusterNameLength:           genericImportedClusterValidators.clusterNameLength(this),
+        workerConcurrencyRule:       genericImportedClusterValidators.workerConcurrency(this),
+        controlPlaneConcurrencyRule: genericImportedClusterValidators.controlPlaneConcurrency(this),
+      };
+    },
+
+    upgradeStrategy: {
+      get() {
+        if ( this.normanCluster?.rke2Config ) {
+          return this.normanCluster.rke2Config?.rke2upgradeStrategy;
+        }
+
+        return this.normanCluster?.k3sConfig?.k3supgradeStrategy;
+      },
+      set(newValue) {
+        if ( this.normanCluster?.rke2Config ) {
+          this.normanCluster.rke2Config.rke2upgradeStrategy = newValue;
+        }
+
+        this.normanCluster.k3sConfig.k3supgradeStrategy = newValue;
+      }
+
+    },
+
+    isEdit() {
+      return this.mode === _EDIT;
+    },
+    isK3s() {
+      return !!this.value.isK3s;
+    },
+    isRke2() {
+      return !!this.value.isRke2;
+    },
+    enableNetworkPolicySupported() {
+      // https://github.com/rancher/rancher/pull/33070/files
+      return !this.isK3s && !this.isRke2;
+    },
+    isLocal() {
+      return !!this.value.isLocal;
+    },
+
+    doneRoute() {
+      return this.value?.listLocation?.name;
+    },
+
+    canManageMembers() {
+      return canViewClusterMembershipEditor(this.$store);
+    },
+
+    providerTabKey() {
+      return this.isK3s ? this.t('imported.accordions.k3sOptions') : this.t('imported.accordions.rke2Options');
+    },
+    // If the cluster hasn't been fully imported yet, we won't have this information yet
+    // and Basics should be hidden
+    showBasics() {
+      return !!this.config;
+    },
+    showInstanceDescription() {
+      return this.isLocal || !this.isEdit;
+    },
+    hideDescriptions: mapPref(HIDE_DESC),
+
+    harvesterEnabled: mapFeature(HARVESTER_FEATURE),
+
+    harvesterLocation() {
+      return this.isCreate && !this.hideDescriptions.includes(HARVESTER_HIDE_KEY) && this.harvesterEnabled ? {
+        name:   `c-cluster-product-resource`,
+        params: {
+          product:  HARVESTER_MANAGER,
+          resource: HCI.CLUSTER,
+        }
+      } : null;
+    }
+  },
+
+  methods: {
+
+    onMembershipUpdate(update) {
+      this.membershipUpdate = update;
+    },
+    async saveRoleBindings() {
+      if (this.membershipUpdate.save) {
+        await this.membershipUpdate.save(this.normanCluster.id);
+      }
+    },
+    async actuallySave() {
+      if (this.isEdit) {
+        return await this.normanCluster.save();
+      } else {
+        await this.normanCluster.save();
+
+        return await this.normanCluster.waitForProvisioning();
+      }
+    },
+
+    async getVersions() {
+      this.loadingVersions = true;
+      this.versionOptions = [];
+
+      try {
+        const globalSettings = await this.$store.getters['management/all'](MANAGEMENT.SETTING) || [];
+        let hash = {};
+
+        if (this.isK3s) {
+          hash = { versions: this.$store.dispatch('management/request', { url: '/v1-k3s-release/releases' }) };
+
+          const defaultK3sSetting = globalSettings.find((setting) => setting.id === 'k3s-default-version') || {};
+
+          this.defaultVersion = defaultK3sSetting?.value || defaultK3sSetting?.default;
+
+          // Use the channel if we can not get the version from the settings
+          if (!this.defaultVersion) {
+            hash.channels = this.$store.dispatch('management/request', { url: '/v1-k3s-release/channels' });
+          }
+        } else {
+          hash = { versions: this.$store.dispatch('management/request', { url: '/v1-rke2-release/releases' }) };
+
+          const defaultRke2Setting = globalSettings.find((setting) => setting.id === 'rke2-default-version') || {};
+
+          this.defaultVersion = defaultRke2Setting?.value || defaultRke2Setting?.default;
+
+          if (!this.defaultVersion) {
+            hash.channels = this.$store.dispatch('management/request', { url: '/v1-rke2-release/channels' });
+          }
+        }
+        const res = await allHash(hash);
+
+        this.allVersions = res.versions?.data || [];
+        if (!this.defaultVersion) {
+          const channels = res.channels?.data || [];
+
+          this.defaultVersion = channels.find((x) => x.id === 'default')?.latest;
+        }
+
+        this.loadingVersions = false;
+      } catch (err) {
+        this.loadingVersions = false;
+        const errors = this.errors;
+
+        errors.push(this.t('imported.errors.kubernetesVersions', { e: err.error || err }));
+      }
+    },
+
+    kubernetesVersionChanged(val) {
+      if ( !this.isK3s ) {
+        this.normanCluster.rke2Config.kubernetesVersion = val;
+      } else {
+        this.normanCluster.k3sConfig.kubernetesVersion = val;
+      }
+    },
+    enableLocalClusterAuthEndpoint(neu) {
+      this.normanCluster.localClusterAuthEndpoint.enabled = neu;
+      if (!!neu) {
+        this.normanCluster.localClusterAuthEndpoint.caCerts = '';
+        this.normanCluster.localClusterAuthEndpoint.fqdn = '';
+      } else {
+        delete this.normanCluster.localClusterAuthEndpoint.caCerts;
+        delete this.normanCluster.localClusterAuthEndpoint.fqdn;
+      }
+    },
+    async done() {
+      if (!this.isEdit) {
+        return this.$router.replace({
+          name:   'c-cluster-product-resource-namespace-id',
+          params: {
+            resource:  CAPI.RANCHER_CLUSTER,
+            namespace: this.value.metadata.namespace,
+            id:        this.normanCluster.id,
+          },
+        });
+      } else {
+        if ( !this.doneRoute ) {
+          return;
+        }
+
+        this.$router.replace({
+          name:   this.doneRoute,
+          params: this.doneParams || { resource: this.value.type }
+        });
+      }
+    },
+
+    hideHarvesterNotice() {
+      const neu = this.hideDescriptions.slice();
+
+      addObject(neu, HARVESTER_HIDE_KEY);
+
+      this.hideDescriptions = neu;
+    },
+  },
+
+  watch: {
+    showCustomRegistryInput(value) {
+      if (!value) {
+        this.normanCluster.importedConfig.privateRegistryURL = null;
+      }
+    }
+  }
+
+});
+</script>
+
+<template>
+  <CruResource
+    :resource="value"
+    :mode="mode"
+    :can-yaml="false"
+    :done-route="doneRoute"
+    :errors="errors"
+    :validation-passed="fvFormIsValid"
+    @error="e=>errors=e"
+    @finish="save"
+  >
+    <Loading
+      v-if="$fetchState.pending"
+      mode="relative"
+    />
+    <div v-else>
+      <div>
+        <Banner
+          v-if="harvesterLocation"
+          color="info"
+          :closable="true"
+          class="mb-20"
+          @close="hideHarvesterNotice"
+        >
+          {{ t('cluster.harvester.importNotice') }}
+          <router-link :to="harvesterLocation">
+            {{ t('product.harvesterManager') }}
+          </router-link>
+        </Banner>
+        <NameNsDescription
+          v-if="!isView"
+          v-model:value="normanCluster"
+          :mode="mode"
+          :namespaced="false"
+          :nameEditable="!isEdit"
+          :descriptionDisabled="!showInstanceDescription"
+          nameKey="name"
+          descriptionKey="description"
+          name-label="cluster.name.label"
+          name-placeholder="cluster.name.placeholder"
+          description-label="cluster.description.label"
+          description-placeholder="cluster.description.placeholder"
+          :rules="{name: fvGetAndReportPathRules('name')}"
+        />
+      </div>
+      <Accordion
+        v-if="showBasics"
+        :title="providerTabKey"
+        :open-initially="true"
+        class="mb-20 accordion"
+      >
+        <Basics
+          :value="normanCluster"
+          :mode="mode"
+          :config="config"
+          :upgrade-strategy="upgradeStrategy"
+          :versions="allVersions"
+          :default-version="defaultVersion"
+          :loading-versions="loadingVersions"
+          :rules="{workerConcurrency: fvGetAndReportPathRules('workerConcurrency'), controlPlaneConcurrency: fvGetAndReportPathRules('controlPlaneConcurrency') }"
+          @kubernetes-version-changed="kubernetesVersionChanged"
+          @drain-server-nodes-changed="(val)=>upgradeStrategy.drainServerNodes = val"
+          @drain-worker-nodes-changed="(val)=>upgradeStrategy.drainWorkerNodes = val"
+          @server-concurrency-changed="(val)=>upgradeStrategy.serverConcurrency = val"
+          @worker-concurrency-changed="(val)=>upgradeStrategy.workerConcurrency = val"
+        />
+      </Accordion>
+      <Accordion
+        class="mb-20 accordion"
+        title-key="members.memberRoles"
+        :open-initially="true"
+      >
+        <Banner
+          v-if="isEdit"
+          color="info"
+        >
+          {{ t('cluster.memberRoles.removeMessage') }}
+        </Banner>
+        <ClusterMembershipEditor
+          v-if="canManageMembers"
+          :mode="mode"
+          :parent-id="normanCluster.id ? normanCluster.id : null"
+          @membership-update="onMembershipUpdate"
+        />
+      </Accordion>
+      <Accordion
+        class="mb-20 accordion"
+        title-key="imported.accordions.labels"
+        :open-initially="false"
+      >
+        <Labels
+          v-model:value="normanCluster"
+          :mode="mode"
+        />
+      </Accordion>
+      <Accordion
+        v-if="isEdit"
+        class="mb-20 accordion"
+        title-key="imported.accordions.networking"
+        data-testid="network-accordion"
+        :open-initially="false"
+      >
+        <div
+          v-if="enableNetworkPolicySupported"
+          class="mb-20"
+        >
+          <Banner
+            v-if="!!normanCluster.enableNetworkPolicy"
+            color="info"
+            label-key="imported.network.banner"
+          />
+          <Checkbox
+            v-model:value="normanCluster.enableNetworkPolicy"
+            :mode="mode"
+            :label="t('cluster.rke2.enableNetworkPolicy.label')"
+          />
+        </div>
+        <h3 v-t="'cluster.tabs.ace'" />
+        <ACE
+          v-model:value="normanCluster.localClusterAuthEndpoint"
+          :mode="mode"
+          @local-cluster-auth-endpoint-changed="enableLocalClusterAuthEndpoint"
+          @ca-certs-changed="(val)=>normanCluster.localClusterAuthEndpoint.caCerts = val"
+          @fqdn-changed="(val)=>normanCluster.localClusterAuthEndpoint.fqdn = val"
+        />
+      </Accordion>
+      <Accordion
+        v-if="isEdit"
+        class="mb-20 accordion"
+        title-key="imported.accordions.registries"
+        data-testid="registries-accordion"
+        :open-initially="false"
+      >
+        <Banner
+          color="info"
+          class="mt-0"
+        >
+          {{ t('cluster.privateRegistry.importedDescription') }}
+        </Banner>
+        <Checkbox
+          v-model:value="showPrivateRegistryInput"
+          class="mb-20"
+          :label="t('cluster.privateRegistry.label')"
+          data-testid="private-registry-enable-checkbox"
+        />
+        <LabeledInput
+          v-if="showPrivateRegistryInput"
+          v-model:value="normanCluster.importedConfig.privateRegistryURL"
+          :mode="mode"
+          :disabled="!isEdit"
+          :rules="fvGetAndReportPathRules('normanCluster.importedConfig.privateRegistryURL')"
+          label-key="catalog.chart.registry.custom.inputLabel"
+          data-testid="private-registry-url"
+          :placeholder="t('catalog.chart.registry.custom.placeholder')"
+        />
+      </Accordion>
+      <Accordion
+        class="mb-20 accordion"
+        title-key="imported.accordions.advanced"
+        :open-initially="false"
+      >
+        <h3>
+          {{ t('imported.agentEnv.header') }}
+        </h3>
+        <KeyValue
+          v-model:value="normanCluster.agentEnvVars"
+          :mode="mode"
+          key-name="name"
+          :as-map="false"
+          :preserve-keys="['valueFrom']"
+          :supported="(row) => typeof row.valueFrom === 'undefined'"
+          :read-allowed="true"
+          :value-can-be-empty="true"
+          :key-label="t('cluster.agentEnvVars.keyLabel')"
+          :parse-lines-from-file="true"
+        />
+      </Accordion>
+    </div>
+  </CruResource>
+</template>
+
+<style lang="scss" scoped>
+    .accordion {
+        border-radius: 16px;
+    }
+</style>

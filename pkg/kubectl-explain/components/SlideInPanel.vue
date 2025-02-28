@@ -2,6 +2,7 @@
 import ExplainPanel from './ExplainPanel';
 import { KEY } from '@shell/utils/platform';
 import { expandOpenAPIDefinition, getOpenAPISchemaName, makeOpenAPIBreadcrumb } from '../open-api-utils.ts';
+import { useWatcherBasedSetupFocusTrapWithDestroyIncluded } from '@shell/composables/focusTrap';
 
 const HEADER_HEIGHT = 55;
 
@@ -12,10 +13,6 @@ export default {
     schema: {
       type:    Object,
       default: () => {}
-    },
-    $t: {
-      type:     Function,
-      required: true,
     }
   },
 
@@ -38,7 +35,15 @@ export default {
     };
   },
 
+  created() {
+    useWatcherBasedSetupFocusTrapWithDestroyIncluded(() => this.isOpen, '.slide-in', {
+      escapeDeactivates: false,
+      allowOutsideClick: true
+    });
+  },
+
   computed: {
+
     top() {
       const banner = document.getElementById('banner-header');
       let height = HEADER_HEIGHT;
@@ -194,6 +199,7 @@ export default {
       class="slide-in"
       :class="{ 'slide-in-open': isOpen }"
       :style="{ width, right, top, height }"
+      data-testid="slide-in-panel"
     >
       <div
         ref="resizer"
@@ -210,7 +216,7 @@ export default {
             class="breadcrumbs"
           >
             <div v-if="noResource">
-              {{ $t('kubectl-explain.title') }}
+              {{ t('kubectl-explain.title') }}
             </div>
             <div
               v-for="(b, i) in breadcrumbs"
@@ -229,24 +235,42 @@ export default {
                 v-else
                 href="#"
                 class="breadcrumb-link"
+                role="button"
+                :aria-label="t('kubectl-explain.navigateToBreadcrumb', { breadcrumb: b.name })"
                 @click="navigate(breadcrumbs.slice(0, i + 1))"
+                @keydown.enter.space.stop.prevent="navigate(breadcrumbs.slice(0, i + 1))"
               >{{ b.name }}</a>
             </div>
           </div>
           <div
             v-else
-            @click="scrollTop()"
+            class="scroll-title"
           >
-            {{ $t('kubectl-explain.title') }}
+            <span
+              role="button"
+              :aria-label="t('kubectl-explain.scrollToTop')"
+              tabindex="0"
+              @click="scrollTop()"
+              @keydown.space.enter.stop.prevent="scrollTop()"
+            >{{ t('kubectl-explain.title') }}</span>
           </div>
           <i
             v-if="!busy && !noResource && definition"
             class="icon icon-sort mr-10"
+            role="button"
+            :aria-label="t('kubectl-explain.expandAll')"
+            tabindex="0"
             @click="toggleAll()"
+            @keydown.space.enter.stop.prevent="toggleAll()"
           />
           <i
+            role="button"
+            :aria-label="t('kubectl-explain.scrollToTop')"
             class="icon icon-close"
-            @click="close"
+            data-testid="slide-in-panel-close"
+            tabindex="0"
+            @click="close()"
+            @keydown.space.enter.stop.prevent="close()"
           />
         </div>
         <div
@@ -254,7 +278,10 @@ export default {
           class="loading panel-loading"
         >
           <div>
-            <i class="icon icon-lg icon-spinner icon-spin" />
+            <i
+              class="icon icon-lg icon-spinner icon-spin"
+              :alt="t('kubectl-explain.informationLoading')"
+            />
           </div>
         </div>
         <ExplainPanel
@@ -262,7 +289,6 @@ export default {
           ref="main"
           :expand-all="expandAll"
           :definition="definition"
-          :$t="$t"
           class="explain-panel"
           @navigate="navigate"
         />
@@ -270,9 +296,12 @@ export default {
           v-if="error"
           class="select-resource"
         >
-          <i class="icon icon-error" />
+          <i
+            class="icon icon-error"
+            :alt="t('kubectl-explain.errorLoading')"
+          />
           <div>
-            {{ $t('kubectl-explain.errors.load') }}
+            {{ t('kubectl-explain.errors.load') }}
           </div>
         </div>
         <div
@@ -288,10 +317,10 @@ export default {
             <path d="M260-320q47 0 91.5 10.5T440-278v-394q-41-24-87-36t-93-12q-36 0-71.5 7T120-692v396q35-12 69.5-18t70.5-6Zm260 42q44-21 88.5-31.5T700-320q36 0 70.5 6t69.5 18v-396q-33-14-68.5-21t-71.5-7q-47 0-93 12t-87 36v394Zm-40 118q-48-38-104-59t-116-21q-42 0-82.5 11T100-198q-21 11-40.5-1T40-234v-482q0-11 5.5-21T62-752q46-24 96-36t102-12q58 0 113.5 15T480-740q51-30 106.5-45T700-800q52 0 102 12t96 36q11 5 16.5 15t5.5 21v482q0 23-19.5 35t-40.5 1q-37-20-77.5-31T700-240q-60 0-116 21t-104 59ZM280-494Z" />
           </svg>
           <div v-if="notFound">
-            {{ $t('kubectl-explain.errors.notFound') }}
+            {{ t('kubectl-explain.errors.notFound') }}
           </div>
           <div v-else>
-            {{ $t('kubectl-explain.prompt') }}
+            {{ t('kubectl-explain.prompt') }}
           </div>
         </div>
       </div>
@@ -301,6 +330,11 @@ export default {
 
 <style lang="scss" scoped>
   $slidein-width: 33%;
+
+  .scroll-title span:focus-visible {
+    @include focus-outline;
+    outline-offset: 2px;
+  }
 
   .panel-resizer {
     position: absolute;

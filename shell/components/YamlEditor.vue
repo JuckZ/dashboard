@@ -13,6 +13,8 @@ export const EDITOR_MODES = {
 };
 
 export default {
+  emits: ['update:value', 'newObject', 'onInput', 'onReady', 'onChanges', 'validationChanged'],
+
   components: {
     CodeMirror,
     FileDiff
@@ -24,6 +26,11 @@ export default {
       validator(value) {
         return Object.values(EDITOR_MODES).includes(value);
       }
+    },
+
+    mode: {
+      type:    String,
+      default: '',
     },
 
     asObject: {
@@ -103,7 +110,7 @@ export default {
         mode:            'yaml',
         lint:            !readOnly,
         lineNumbers:     !readOnly,
-        styleActiveLine: true,
+        styleActiveLine: false,
         tabSize:         2,
         indentWithTabs:  false,
         cursorBlinkRate: ( readOnly ? -1 : 530 ),
@@ -124,6 +131,7 @@ export default {
             cm.indentSelection('subtract');
           }
         },
+        screenReaderLabel: this.t('import.editor.label'),
         // @TODO find a better way to display the outline
         // foldOptions: {
         //   widget: (from, to) => {
@@ -169,14 +177,14 @@ export default {
 
     onInput(value) {
       if ( !this.asObject ) {
-        this.$emit('input', ...arguments);
+        this.$emit('update:value', ...arguments);
       }
 
       try {
         const parsed = jsyaml.load(value);
 
         if ( this.asObject ) {
-          this.$emit('input', parsed);
+          this.$emit('update:value', parsed);
         } else {
           this.$emit('newObject', parsed);
         }
@@ -210,17 +218,21 @@ export default {
         class="btn-group btn-sm diff-mode"
       >
         <button
+          role="button"
+          :aria-label="t('generic.unified')"
           type="button"
           class="btn btn-sm bg-default"
           :class="{'active': diffMode !== 'split'}"
           @click="diffMode='unified'"
-        >Unified</button>
+        >{{ t('generic.unified') }}</button>
         <button
+          role="button"
+          :aria-label="t('generic.split')"
           type="button"
           class="btn btn-sm bg-default"
           :class="{'active': diffMode === 'split'}"
           @click="diffMode='split'"
-        >Split</button>
+        >{{ t('generic.split') }}</button>
       </span>
     </div>
     <CodeMirror
@@ -229,10 +241,13 @@ export default {
       :class="{fill: true, scrolling: scrolling}"
       :value="curValue"
       :options="codeMirrorOptions"
+      :showKeyMapBox="true"
       :data-testid="componentTestid + '-code-mirror'"
+      :mode="mode"
       @onInput="onInput"
       @onReady="onReady"
       @onChanges="onChanges"
+      @validationChanged="$emit('validationChanged', $event)"
     />
     <FileDiff
       v-else
@@ -246,7 +261,7 @@ export default {
   </div>
 </template>
 
-<style lang="scss" scoped>
+<style lang="scss">
 .yaml-editor {
   display: flex;
   flex-direction: column;
@@ -255,7 +270,7 @@ export default {
     flex: 1;
   }
 
-  ::v-deep .code-mirror  {
+  .codemirror-container  {
     position: relative;
 
     .CodeMirror {

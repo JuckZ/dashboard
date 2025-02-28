@@ -11,11 +11,11 @@ import SortableTable from '@shell/components/SortableTable';
 import { sortBy } from '@shell/utils/sort';
 import { exceptionToErrorsArray } from '@shell/utils/error';
 import { NAMESPACE } from '@shell/config/types';
-import {
-  NAME as NAME_COL, STATE, TYPE, NAMESPACE as NAMESPACE_COL, AGE
-} from '@shell/config/table-headers';
+import { NAME as NAME_COL, TYPE, NAMESPACE as NAMESPACE_COL, AGE } from '@shell/config/table-headers';
 
 export default {
+  emits: ['close', 'onReadyYamlEditor'],
+
   components: {
     AsyncButton,
     Banner,
@@ -41,7 +41,7 @@ export default {
   data() {
     return {
       currentYaml:   '',
-      allNamespaces: null,
+      allNamespaces: [],
       errors:        null,
       rows:          null,
       done:          false,
@@ -64,7 +64,6 @@ export default {
 
     headers() {
       return [
-        STATE,
         TYPE,
         NAME_COL,
         NAMESPACE_COL,
@@ -112,6 +111,10 @@ export default {
         this.close();
       }
     },
+
+    onReadyYamlEditor(arg) {
+      this.$emit('onReadyYamlEditor', arg);
+    }
   },
 };
 </script>
@@ -121,17 +124,23 @@ export default {
   <Card
     v-else
     :show-highlight-border="false"
+    data-testid="import-yaml"
+    :trigger-focus-trap="true"
   >
     <template #title>
       <div style="display: block; width: 100%;">
         <template v-if="done">
-          <h4>{{ t('import.success', {count: rows.length}) }}</h4>
+          <h4 data-testid="import-yaml-success">
+            {{ t('import.success', {count: rows.length}) }}
+          </h4>
         </template>
         <template v-else>
           <h4 v-t="'import.title'" />
           <div class="row">
             <div class="col span-6">
               <FileSelector
+                role="button"
+                :aria-label="t('generic.readFromFileArea', { area: t('import.title') })"
                 class="btn role-secondary pull-left"
                 :label="t('generic.readFromFile')"
                 @selected="onFileSelected"
@@ -139,11 +148,11 @@ export default {
             </div>
             <div class="col span-6">
               <LabeledSelect
-                v-model="defaultNamespace"
-                class="pull-right"
+                :value="defaultNamespace"
                 :options="namespaceOptions"
                 label-key="import.defaultNamespace.label"
                 mode="edit"
+                @update:value="newValue => defaultNamespace = newValue"
               />
             </div>
           </div>
@@ -162,6 +171,7 @@ export default {
             :paging="true"
             :row-actions="false"
             :table-actions="false"
+            :sub-rows-description="false"
             @rowClick="rowClick"
           />
         </div>
@@ -169,8 +179,9 @@ export default {
       <YamlEditor
         v-else
         ref="yamleditor"
-        v-model="currentYaml"
+        v-model:value="currentYaml"
         class="yaml-editor"
+        @onReady="onReadyYamlEditor"
       />
       <Banner
         v-for="(err, i) in errors"
@@ -186,8 +197,11 @@ export default {
         style="width: 100%"
       >
         <button
+          :aria-label="t('generic.close')"
+          role="button"
           type="button"
           class="btn role-primary"
+          data-testid="import-yaml-close"
           @click="close"
         >
           {{ t('generic.close') }}
@@ -199,8 +213,11 @@ export default {
         style="width: 100%"
       >
         <button
+          :aria-label="t('generic.cancel')"
+          role="button"
           type="button"
           class="btn role-secondary mr-10"
+          data-testid="import-yaml-cancel"
           @click="close"
         >
           {{ t('generic.cancel') }}
@@ -209,6 +226,8 @@ export default {
           v-if="!done"
           mode="import"
           :disabled="!currentYaml.length"
+          data-testid="import-yaml-import-action"
+          :aria-label="t('import.title')"
           @click="importYaml"
         />
       </div>
@@ -225,7 +244,7 @@ export default {
     min-height: $min;
     max-height: $max;
 
-    ::v-deep .code-mirror {
+    :deep() .code-mirror {
       .CodeMirror {
         position: initial;
       }
